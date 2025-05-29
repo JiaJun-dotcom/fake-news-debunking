@@ -3,9 +3,9 @@
 This is a GenAI model that integrates various types of Artificial Intelligence, including 
 Natural Language Processing(NLP) and Machine Learning, on top of your general fake news detector.
 
-Trained on KaggleHub Datasets of classified Real and Fake news, and integrates Google AI for to train and deploy this model using Vertex AI Training, and APIs such as Google's Natural Language API and Fact Check Tools API.
+Trained on KaggleHub Datasets of classified Real and Fake news, and integrates Google AI to train and deploy the model using Vertex AI Training, and APIs such as Google's Natural Language API and Fact Check Tools API.
 
-Connected to MongoDB.
+Connected to MongoDB as primary database to store dataset as text embeddings.
 
 * Train a fake/real news classifier(supervised learning model): 
 A ML model trained on labeled "Text" and "Title" data to predict if a new, unseen article is "Fake"(0) or "Real"(1).
