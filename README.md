@@ -1,4 +1,4 @@
---- Deconstructing Fake News Narratives to enhance Media Literacy --- 
+*** Deconstructing Fake News Narratives to enhance Media Literacy ***
 
 This is a GenAI model that integrates various types of Artificial Intelligence, including 
 Natural Language Processing(NLP) and Machine Learning, on top of your general fake news detector.
