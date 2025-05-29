@@ -1,0 +1,23 @@
+{
+  "loaded_language_terms": {
+    "negative_bias": ["so-called", "radical", "extremist", "puppet", "regime", "elites", "globalist", "fake news", "hoax", "alarmist"],
+    "positive_bias": ["patriotic", "freedom-loving", "hard-working", "common sense", "true patriot", "authentic", "proven"]
+  },
+  "conspiracy_markers": [
+    "they don't want you to know", "the hidden truth", "mainstream media won't tell you",
+    "cover-up", "false flag", "deep state", "new world order", "it's all connected",
+    "wake up", "do your own research", "red pill", "the real story", "what they're not saying", "lizard people"
+  ],
+  "vague_sources_terms": [
+    "experts say", "sources claim", "it is reported", "many believe", "insiders suggest",
+    "studies show", "unnamed source", "a source close to", "it is understood", "general consensus"
+  ],
+  "sensational_punctuation_patterns": {
+    "title_exclamations": "!!+",
+    "title_questions": "\\?\\?+",
+    "text_exclamations_density_threshold": 0.5 
+  },
+  "other_charged_phrases": {
+      "urgent_phrases": ["breaking", "urgent", "now", "immediately", "must read", "alert", "critical update"]
+  }
+}

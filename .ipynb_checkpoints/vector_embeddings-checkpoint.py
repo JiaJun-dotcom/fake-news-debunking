@@ -5,6 +5,7 @@ from tqdm import tqdm
 import time
 import pymongo
 import numpy as np
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,6 +18,8 @@ COLLECTION_NAME = os.environ.get("COLLECTION_NAME")
 CSV_FILE_PATH = "WELFake_Dataset.csv"
 EMBEDDING_MODEL_NAME = "text-embedding-005"
 # There is also "textembedding-gecko-multilingual@001" for multilingual text embedding.
+
+# MAX_CHARS_PER_CHUNK = 18000 * 3
 
 # --- Initialize Clients ---
 mongo_client = MongoClient(MONGO_URI)
@@ -31,10 +34,7 @@ documents_to_process = collection.find({"text_embedding": {"$exists": False}, "t
 doc_list = list(documents_to_process)
 print(f"Found {len(doc_list)} documents to process for embeddings.")
 
-batch_size = 20
-
-if EMBEDDING_MODEL_NAME.startswith("textembedding-gecko"):
-    batch_size = 5 # Adhere to gecko's specific batch limit
+batch_size = 10
 
 for i in tqdm(range(0, len(doc_list), batch_size)):
     current_batch_docs = doc_list[i:i+batch_size]
