@@ -1,11 +1,11 @@
-*** Deconstructing Fake News Narratives to enhance Media Literacy ***
+--- Deconstructing Fake News Narratives to enhance Media Literacy --- 
 
 This is a GenAI model that integrates various types of Artificial Intelligence, including 
 Natural Language Processing(NLP) and Machine Learning, on top of your general fake news detector.
 
-Trained on KaggleHub Datasets of classified Real and Fake news, and integrates Google AI to train and deploy the model using Vertex AI Training, and APIs such as Google's Natural Language API and Fact Check Tools API.
+Trained on KaggleHub Datasets of classified Real and Fake news, and integrates Google AI for to train and deploy this model using Vertex AI Training, and APIs such as Google's Natural Language API and Fact Check Tools API.
 
-Connected to MongoDB as primary database to store dataset as text embeddings.
+Connected to MongoDB.
 
 * Train a fake/real news classifier(supervised learning model): 
 A ML model trained on labeled "Text" and "Title" data to predict if a new, unseen article is "Fake"(0) or "Real"(1).
@@ -53,9 +53,12 @@ User Input: When a user submits a news article's title, a key claim from its tex
 
 
 * User Explanation Layer ( Generative AI - PaLM/Gemini):
-After all the analysis (your classifier, sentiment, tactic ID, fact-check API, vector search), use a generative model to synthesize the findings into a human-readable summary for the user.
+After all the analysis (your classifier, sentiment, tactic ID, fact-check API, vector search), a generative model is used to synthesize the findings into a human-readable summary for the user.
 
-Sample Prompt for PaLM/Gemini:
+* Model Selected: DeepSeek-R1-Distill-Llama-8B-GGUF
+Distilled and quantized version of Deepseek-R1 Llama 3 model with 8B params, to suit limitations of project 
+
+Sample Prompt for:
 "Analyze the following news assessment and provide a concise summary for the user, highlighting key reasons for concern or confidence.
 
 News Title: [Title of user's article]

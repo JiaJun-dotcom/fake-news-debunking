@@ -12,7 +12,7 @@ from sklearn.metrics import accuracy_score, classification_report
 from tqdm.auto import tqdm # For progress bars
 
 # --- Configuration ---
-CSV_FILE_PATH = "WELFake_Dataset.csv" 
+CSV_FILE_PATH = "./data/WELFake_Dataset.csv" 
 TEXT_COLUMN = "text"                  
 TITLE_COLUMN = "title"                
 LABEL_COLUMN = "label"                

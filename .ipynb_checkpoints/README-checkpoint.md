@@ -53,9 +53,11 @@ User Input: When a user submits a news article's title, a key claim from its tex
 
 
 * User Explanation Layer ( Generative AI - PaLM/Gemini):
-After all the analysis (your classifier, sentiment, tactic ID, fact-check API, vector search), use a generative model to synthesize the findings into a human-readable summary for the user.
+After all the analysis (your classifier, sentiment, tactic ID, fact-check API, vector search), a generative model is used to synthesize the findings into a human-readable summary for the user.
 
-Sample Prompt for PaLM/Gemini:
+* Model Selected: DeepSeek-R1-Distill-Llama-8B
+
+Sample Prompt for:
 "Analyze the following news assessment and provide a concise summary for the user, highlighting key reasons for concern or confidence.
 
 News Title: [Title of user's article]

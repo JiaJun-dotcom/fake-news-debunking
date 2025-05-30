@@ -18,7 +18,7 @@ VAGUE_SOURCES_TERMS = []
 SENSATIONAL_PUNCTUATION_PATTERNS = {}
 OTHER_CHARGED_PHRASES = {}
 
-LEXICON_FILE_PATH = "lexicons.json"
+LEXICON_FILE_PATH = "./data/lexicons.json"
 
 # --- Initialization Function for API Clients & Lexicons ---
 def initialize_resources():
