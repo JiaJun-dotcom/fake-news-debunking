@@ -3,14 +3,12 @@ import re
 import json
 from dotenv import load_dotenv
 from google.cloud import language_v1
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer # For VADER
 
 # --- Load Environment Variables ---
 load_dotenv()
 
-# --- Global Clients & Lexicons (Initialize once) ---
+# --- Global Clients & Lexicons ---
 LANGUAGE_CLIENT = None
-VADER_ANALYZER = None # For VADER
 
 LOADED_LANGUAGE_TERMS = {}
 CONSPIRACY_MARKERS = []
@@ -21,8 +19,8 @@ OTHER_CHARGED_PHRASES = {}
 LEXICON_FILE_PATH = "./data/lexicons.json"
 
 # --- Initialization Function for API Clients & Lexicons ---
-def initialize_resources():
-    global LANGUAGE_CLIENT, VADER_ANALYZER
+def initialize_tactic_resources():
+    global LANGUAGE_CLIENT
     global LOADED_LANGUAGE_TERMS, CONSPIRACY_MARKERS, VAGUE_SOURCES_TERMS, SENSATIONAL_PUNCTUATION_PATTERNS, OTHER_CHARGED_PHRASES
 
     # Load Lexicons
@@ -47,14 +45,6 @@ def initialize_resources():
     except Exception as e:
         print(f"ERROR: Failed to initialize Google Natural Language API client: {e}")
 
-    # Initialize VADER Sentiment Analyzer
-    try:
-        VADER_ANALYZER = SentimentIntensityAnalyzer()
-        print("VADER Sentiment Analyzer initialized successfully.")
-    except Exception as e:
-        print(f"ERROR: Failed to initialize VADER: {e}")
-
-
 # --- Helper Function for Google NLP API (Sentiment, Entities, Syntax) ---
 def analyze_text_with_google_nlp_full(text_content):
     """Analyzes text for sentiment, entities, and syntax using Google NLP API."""
@@ -64,14 +54,13 @@ def analyze_text_with_google_nlp_full(text_content):
         document = language_v1.types.Document(content=text_content, type_=language_v1.types.Document.Type.PLAIN_TEXT)
         features = language_v1.AnnotateTextRequest.Features(
             extract_syntax=True,
-            extract_entities=True,
-            extract_document_sentiment=True
+            extract_entities=True
         )
         response = LANGUAGE_CLIENT.annotate_text(document=document, features=features, encoding_type=language_v1.EncodingType.UTF8)
-        return response.document_sentiment, response.entities, response.sentences, response.tokens
+        return response.entities, response.sentences, response.tokens
     except Exception as e:
         print(f"Error in Google NLP API (annotate_text) call: {e}")
-        return None, None, None, None
+        return None, None, None
 
 
 # --- Main Tactic Detection Function ---
@@ -83,10 +72,9 @@ def detect_disinformation_tactics(title, text):
     detected_tactics = set()
     if not text and not title: return []
 
-    # --- A. Initial Full NLP Analysis (Sentiment, Entities, Syntax from Google) ---
-    gcp_sentiment, gcp_entities, gcp_sentences, gcp_tokens = None, None, None, None
+    gcp_entities, gcp_sentences, gcp_tokens = None, None, None
     if text: # Only analyze text if it exists
-        gcp_sentiment, gcp_entities, gcp_sentences, gcp_tokens = analyze_text_with_google_nlp_full(text)
+        gcp_entities, gcp_sentences, gcp_tokens = analyze_text_with_google_nlp_full(text)
 
     # --- 1. Sensationalism/Clickbait ---
     # a) Excessive Capitalization in Title
@@ -110,29 +98,11 @@ def detect_disinformation_tactics(title, text):
             if text.count('!') / (num_words_text / 100.0 + 1e-6) > exclamation_density_threshold:
                 detected_tactics.add("sensational_text_exclamations")
 
-    # c) Emotionally Charged Words (using VADER for intensity)
-    if VADER_ANALYZER and text:
-        vs = VADER_ANALYZER.polarity_scores(text)
-        # VADER's compound score is a good indicator of overall sentiment intensity
-        if vs['compound'] >= 0.75: # Strongly positive
-            detected_tactics.add("highly_positive_text")
-        elif vs['compound'] <= -0.75: # Strongly negative
-            detected_tactics.add("highly_negative_text")
-        
-        # Check for words with high individual intensity from VADER's lexicon (more granular)
-        # This requires accessing VADER's internal lexicon or pre-processing it.
-        # For simplicity, we'll rely on the compound score and GCP sentiment for now.
-        # A more advanced VADER usage would iterate through words and check their lexicon scores.
-
-    # d) Urgency (from OTHER_CHARGED_PHRASES in lexicons.json)
+    # c) Urgency (from OTHER_CHARGED_PHRASES in lexicons.json)
     combined_text_lower = ((title.lower() if title else "") + " " + (text.lower() if text else "")).strip()
     if OTHER_CHARGED_PHRASES.get("urgent_phrases"):
         if any(phrase in combined_text_lower for phrase in OTHER_CHARGED_PHRASES["urgent_phrases"]):
             detected_tactics.add("urgency_phrasing")
-            
-    # e) General high emotionality from GCP Sentiment
-    if gcp_sentiment and (gcp_sentiment.score > 0.7 or gcp_sentiment.score < -0.7):
-        detected_tactics.add("highly_emotional_sentiment")
 
 
     # --- 2. Lack of Specificity/Vagueness ---
@@ -158,32 +128,32 @@ def detect_disinformation_tactics(title, text):
             if len(specific_persons) == 0 and len(specific_orgs) == 0:
                 detected_tactics.add("lack_of_specific_source_entities")
 
-    # --- 3. Appeals to Emotion over Logic ---
-    if gcp_sentiment and text:
-        num_words = len(text.split())
-        # High magnitude relative to text length
-        if gcp_sentiment.magnitude > (num_words / 100.0 * 1.8) and num_words > 70:
-            numbers_in_text = re.findall(r'\b\d{2,}\b', text)
-            location_entities = [e.name for e in gcp_entities if e.type_ == language_v1.types.Entity.Type.LOCATION and e.salience > 0.01] if gcp_entities else []
-            event_entities = [e.name for e in gcp_entities if e.type_ == language_v1.types.Entity.Type.EVENT and e.salience > 0.01] if gcp_entities else []
+#     # --- 3. Appeals to Emotion over Logic ---
+#     if gcp_sentiment and text:
+#         num_words = len(text.split())
+#         # High magnitude relative to text length
+#         if gcp_sentiment.magnitude > (num_words / 100.0 * 1.8) and num_words > 70:
+#             numbers_in_text = re.findall(r'\b\d{2,}\b', text)
+#             location_entities = [e.name for e in gcp_entities if e.type_ == language_v1.types.Entity.Type.LOCATION and e.salience > 0.01] if gcp_entities else []
+#             event_entities = [e.name for e in gcp_entities if e.type_ == language_v1.types.Entity.Type.EVENT and e.salience > 0.01] if gcp_entities else []
 
-            num_specific_actors = 0
-            if 'specific_persons' in locals() and 'specific_orgs' in locals(): 
-                 num_specific_actors = len(specific_persons) + len(specific_orgs)
-            elif gcp_entities:
-                 num_specific_actors = len([e for e in gcp_entities if (e.type_ == language_v1.types.Entity.Type.PERSON or e.type_ == language_v1.types.Entity.Type.ORGANIZATION) and e.salience > 0.015])
+#             num_specific_actors = 0
+#             if 'specific_persons' in locals() and 'specific_orgs' in locals(): 
+#                  num_specific_actors = len(specific_persons) + len(specific_orgs)
+#             elif gcp_entities:
+#                  num_specific_actors = len([e for e in gcp_entities if (e.type_ == language_v1.types.Entity.Type.PERSON or e.type_ == language_v1.types.Entity.Type.ORGANIZATION) and e.salience > 0.015])
 
 
-            factual_marker_count = len(numbers_in_text) + len(location_entities) + len(event_entities) + num_specific_actors
-            if factual_marker_count < (num_words / 100.0): # e.g., less than 1 factual marker per 100 words
-                detected_tactics.add("high_appeal_to_emotion_with_low_factual_markers")
+#             factual_marker_count = len(numbers_in_text) + len(location_entities) + len(event_entities) + num_specific_actors
+#             if factual_marker_count < (num_words / 100.0): # e.g., less than 1 factual marker per 100 words
+#                 detected_tactics.add("high_appeal_to_emotion_with_low_factual_markers")
 
-    # --- 4. Use of Loaded Language(Negative/Positive Bias) ---
+    # --- 3. Use of Loaded Language(Negative/Positive Bias) ---
     for category, words in LOADED_LANGUAGE_TERMS.items():
         if any(word in combined_text_lower for word in words):
             detected_tactics.add(f"loaded_language_{category}")
 
-    # --- 5. Conspiracy Markers ---
+    # --- 4. Conspiracy Markers ---
     if text and any(phrase in combined_text_lower for phrase in CONSPIRACY_MARKERS):
         detected_tactics.add("conspiracy_markers_present")
 
@@ -224,3 +194,60 @@ def detect_disinformation_tactics(title, text):
 
 
     return list(detected_tactics)
+
+if __name__ == "__main__":
+    # load_dotenv() is at the top, so it's already called when script runs.
+
+    initialize_tactic_resources()
+    print("\n--- Testing Tactic Detection ---")
+
+    test_cases = [
+        {
+            "title": "BREAKING!!! ALIENS LAND IN TIMES SQUARE, GOVERNMENT COVER-UP EXPOSED BY INSIDERS!",
+            "text": """
+            Sources close to the Pentagon, who wish to remain anonymous for their safety, have exclusively revealed
+            that an extraterrestrial spacecraft landed in New York's Times Square late last night. "They don't want you to know
+            the truth," one insider whispered, "but the evidence is undeniable." Eyewitnesses, described only as "concerned citizens,"
+            reported seeing bright lights and strange figures. Mainstream media is silent, proving this is a massive conspiracy.
+            Experts say this changes everything. We must wake up! The so-called "official" reports are a complete hoax.
+            This shocking development was immediately reported by our brave team. It was seen by many.
+            """
+        },
+        {
+            "title": "New Study Suggests Link Between Coffee and Reduced Risk of Certain Diseases",
+            "text": """
+            A recent epidemiological study published in the "Journal of Internal Medicine" by researchers from Reputable University has indicated a potential
+            correlation between regular coffee consumption and a moderately reduced risk of developing type 2 diabetes
+            and certain liver conditions. Data from over 100,000 participants were analyzed by these researchers over a ten-year period.
+            While the findings are promising, authors caution that correlation does not equal causation and more research is needed.
+            "These are interesting preliminary results," stated lead researcher Dr. Eva Rostova, "but people should not drastically
+            alter their coffee habits based solely on this study." It is often said by health professionals that moderation is key.
+            The research was supported by the National Institutes of Health.
+            """
+        },
+        {
+            "title": "URGENT: Stock Market CRASH IMMINENT - Insiders WARN!",
+            "text": "Financial gurus are screaming 'SELL EVERYTHING NOW!' A devastating crash is upon us, they say. The elites are preparing, but the mainstream media won't tell you. This is your final warning. It is believed by some that gold will be the only safe haven. The system is rigged!"
+        },
+        {
+            "title": "Local Park Gets New Swingset",
+            "text": "The city council announced today that a new swingset has been installed at Willow Creek Park. The installation was completed yesterday. Children were observed enjoying the new equipment this afternoon. The project was funded by local taxes. It is hoped that this will improve the park."
+        }
+    ]
+
+    for i, case in enumerate(test_cases):
+        print(f"\n\n--- Test Case {i+1} ---")
+        print(f"Title: {case['title']}")
+        print(f"Text (snippet): {case['text'][:150].strip()}...")
+
+        # Call the main tactic detection function
+        # source_url is optional for this module if not doing domain checks here
+        detected = detect_disinformation_tactics(case["title"], case["text"])
+
+        print(f"\n  Detected Tactics for Case {i+1}:")
+        if detected:
+            for tactic in detected:
+                print(f"    - {tactic}")
+        else:
+            print("    - No specific tactics flagged by current rules.")
+        print("-" * 40)

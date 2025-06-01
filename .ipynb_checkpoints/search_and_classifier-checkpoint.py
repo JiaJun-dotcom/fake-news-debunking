@@ -12,6 +12,8 @@ import vertexai
 
 load_dotenv()
 
+# ** Calls fine-tuned text classifier to output whether it is fake/real news, coupled with semantic similarity search with MongoDB to check against database of how similar it is to [? amount] FAKE/REAL news in vector db.
+
 # --- Configuration ---
 MONGO_URI = os.environ.get("MONGO_URI")
 PROJECT_ID = os.environ.get("PROJECT_ID")
@@ -19,10 +21,10 @@ LOCATION = os.environ.get("LOCATION")
 DATABASE_NAME = os.environ.get("DATABASE_NAME")
 COLLECTION_NAME = os.environ.get("COLLECTION_NAME")
 EMBEDDING_MODEL_NAME = "text-embedding-005"
-FINE_TUNED_MODEL_PATH = "./fine_tuned_distilbert_news_classifier"
+FINE_TUNED_MODEL_PATH = "./fine_tuned_bertmini"
 VECTOR_SEARCH_INDEX_NAME = "vector_index"
 
-def initialize_resources():
+def initialize_classifier_resources():
     global MONGO_CLIENT, NEWS_COLLECTION, CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER, VERTEX_EMBEDDING_MODEL
 
     # MongoDB
@@ -40,17 +42,17 @@ def initialize_resources():
         print(f"ERROR: Could not connect to MongoDB: {e}")
         return False
 
-    # Fine-tuned DistilBERT Classifier
+    # Fine-tuned BERT Classifier
     try:
         if not os.path.exists(FINE_TUNED_MODEL_PATH):
             print(f"ERROR: Fine-tuned model not found at {FINE_TUNED_MODEL_PATH}. Please train and save it first.")
             return False
-        CLASSIFIER_MODEL = DistilBertForSequenceClassification.from_pretrained(FINE_TUNED_MODEL_PATH)
-        CLASSIFIER_TOKENIZER = DistilBertTokenizer.from_pretrained(FINE_TUNED_MODEL_PATH)
+        CLASSIFIER_MODEL = BertForSequenceClassification.from_pretrained(FINE_TUNED_MODEL_PATH)
+        CLASSIFIER_TOKENIZER = BertTokenizer.from_pretrained(FINE_TUNED_MODEL_PATH)
         CLASSIFIER_MODEL.eval() # Set to evaluation mode
-        print("Fine-tuned DistilBERT classifier loaded successfully.")
+        print("Fine-tuned BERT classifier loaded successfully.")
     except Exception as e:
-        print(f"ERROR: Could not load fine-tuned DistilBERT model: {e}")
+        print(f"ERROR: Could not load fine-tuned BERT model: {e}")
         return False
 
     # Vertex AI Embedding Model (for querying vector search)
@@ -64,41 +66,10 @@ def initialize_resources():
                 print(f"Vertex AI Embedding model ({EMBEDDING_MODEL_NAME}) loaded successfully for queries.")
         except Exception as e:
             print(f"ERROR: Could not load Vertex AI Embedding model: {e}")
-            # Continue without it if vector search part is optional or handled differently
     return True
 
-# If user inputs article url
-def scrape_text_from_URL(url):
-    print(f" Attempting to scrape article text from URL: {url} ")
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status() # Raise an exception for HTTP errors
-        soup = BeautifulSoup(response.content, 'html.parser')
 
-        # Basic text extraction: get all paragraphs. More sophisticated parsing might be needed.
-        paragraphs = soup.find_all('p')
-        article_text = "\n".join([para.get_text() for para in paragraphs])
-
-        # Try to get title
-        title_tag = soup.find('h1')
-        article_title = title_tag.get_text().strip() if title_tag else "Title Not Found"
-
-        if not article_text:
-            # Fallback: get all text, then clean (can be noisy)
-            all_text = soup.get_text(separator='\n', strip=True)
-            # Basic cleaning of excessive newlines
-            article_text = re.sub(r'\n\s*\n', '\n\n', all_text)
-
-        print(f"  Successfully scraped content. Title: {article_title[:50]}... Text length: {len(article_text)}")
-        return article_title, article_text
-    except requests.exceptions.RequestException as e:
-        print(f"  Error fetching URL {url}: {e}")
-    except Exception as e:
-        print(f"  Error scraping URL {url}: {e}")
-    return None, None
-
-# --- 2. Inference with Fine-tuned DistilBERT ---
+# --- 2. Inference with Fine-tuned BERT ---
 def classify_article_text(title, text_content):
     if not CLASSIFIER_MODEL or not CLASSIFIER_TOKENIZER:
         print("  Classifier model not loaded. Skipping classification.")
@@ -110,7 +81,7 @@ def classify_article_text(title, text_content):
         print("  Empty input for classification.")
         return None
 
-    print("  Classifying article with fine-tuned DistilBERT...")
+    print("  Classifying article with fine-tuned BERT...")
     inputs = CLASSIFIER_TOKENIZER(combined_input, return_tensors="pt", truncation=True, padding=True, max_length=512)
     with torch.no_grad():
         outputs = CLASSIFIER_MODEL(**inputs)
@@ -150,7 +121,7 @@ def find_similar_articles_vector_search(query_title, query_text, num_results=5):
     pipeline = [
         {
             "$vectorSearch": {
-                "index": VECTOR_SEARCH_INDEX_NAME,
+                "index": "vector_index",
                 "path": "text_embedding",
                 "queryVector": query_vector,
                 "numCandidates": 10, # Adjust as needed
@@ -161,7 +132,7 @@ def find_similar_articles_vector_search(query_title, query_text, num_results=5):
             "$project": {
                 "_id": 0,
                 "title": 1,
-                "label": 1, # Assuming your stored docs have a 'label' field (0 for fake, 1 for real)
+                "label": 1, 
                 "sentiment_score": {"$ifNull": ["$sentiment_score", "N/A"]}, # Handle missing sentiment
                 "similarity_score": {"$meta": "vectorSearchScore"}
             }
