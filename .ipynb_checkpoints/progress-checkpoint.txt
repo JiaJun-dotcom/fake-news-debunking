@@ -1,16 +1,15 @@
 TASKS:
-1. Test news_extraction from specific url
-2. Work on classifier, try to make it as accurate as possible, train with diff models on new combined dataset
-** 3. Test genai.py in the end ** (made asynchronous, all setup done run and check for bugs, but do at the end)
-4. Test vector search
-5. Test fastapi server with curl/Postman/Swagger
+1. Work on classifier, try to make it as accurate as possible, train with diff models on new combined dataset
+** 2. Test genai.py in the end ** (made asynchronous, all setup done run and check for bugs, but do at the end)
+3. Test fastapi server with curl/Postman/Swagger
 
 Completed Testings:
 - Classifiers tested works
 - Factcheck tested works
 - Sentiment analysis works
 - Tactic detection works
-- Vector search
+- Vector search works
+- News extraction from url works 
 
 To explore:
 - Possible caching of any results and uses from users

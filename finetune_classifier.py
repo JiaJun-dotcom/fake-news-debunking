@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import AdamW
-from transformers import DistilBertTokenizer, DistilBertForSequenceClassification, get_linear_schedule_with_warmup
+from transformers import BertTokenizer, BertForSequenceClassification, get_linear_schedule_with_warmup
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 from tqdm.auto import tqdm # For progress bars
@@ -16,7 +16,7 @@ CSV_FILE_PATH_WELFAKE = "./data/WELFake_Dataset.csv"
 CSV_FILE_PATH_NEW_FAKE = "./data/Fake.csv"
 CSV_FILE_PATH_NEW_REAL = "./data/True.csv"
                
-MODEL_NAME = "distilbert-base-uncased-finetuned-sst-2-english"
+MODEL_NAME = "prajjwal1/bert-mini"
 OUTPUT_MODEL_DIR = "./fine_tuned" # Directory to save the fine-tuned model
 
 WELFAKE_TEXT_COLUMN = "text"                  
@@ -185,7 +185,7 @@ if not df_ood_test.empty:
 
 # --- 3. Tokenization ---
 print(f"Loading tokenizer: {MODEL_NAME}...")
-tokenizer = DistilBertTokenizer.from_pretrained(MODEL_NAME)
+tokenizer = BertTokenizer.from_pretrained(MODEL_NAME)
 
 print("Tokenizing training data...")
 train_encodings = tokenizer(train_texts, truncation=True, padding=True, max_length=MAX_LENGTH, return_tensors="pt")
@@ -215,7 +215,7 @@ val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
 
 # --- 6. Load Pre-trained Model ---
 print(f"Loading pre-trained model: {MODEL_NAME}...")
-model = DistilBertForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=2) # 2 labels: fake (0), real (1)
+model = BertForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=2) # 2 labels: fake (0), real (1)
 model.to(device) # Move model to GPU if available
 
 # --- 7. Optimizer and Scheduler ---
@@ -294,6 +294,6 @@ print(f"""
 --- Next Steps ---
 You can now load this fine-tuned model for inference using:
 from transformers import BertTokenizer, BertForSequenceClassification
-model = DistilBertForSequenceClassification.from_pretrained("{OUTPUT_MODEL_DIR}")
-tokenizer = DistilBertTokenizer.from_pretrained("{OUTPUT_MODEL_DIR}")
+model = BertForSequenceClassification.from_pretrained("{OUTPUT_MODEL_DIR}")
+tokenizer = BertTokenizer.from_pretrained("{OUTPUT_MODEL_DIR}")
 """)

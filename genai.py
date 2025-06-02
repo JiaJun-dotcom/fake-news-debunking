@@ -117,8 +117,8 @@ def generate_final_explanation(analysis_data):
         if sim_arts:
             for art in sim_arts[:2]:
                 lbl = "Unknown"
-                if art.get('label') == 0: lbl = "Known FAKE"
-                elif art.get('label') == 1: lbl = "Known REAL"
+                if art.get('label') == 0: lbl = "FAKE"
+                elif art.get('label') == 1: lbl = "REAL"
                 user_prompt_content += f"  - Similar to: \"{art.get('title', 'N/A')}\" ({lbl}, Score: {art.get('similarity_score', 0):.2f})\n"
         else: 
             user_prompt_content += "  - No highly similar articles found.\n"
