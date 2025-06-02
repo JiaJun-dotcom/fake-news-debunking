@@ -13,7 +13,7 @@ import vertexai
 load_dotenv()
 
 # --- Configuration ---
-FINE_TUNED_MODEL_PATH = "./fine_tuned_neurobert_small"
+FINE_TUNED_MODEL_PATH = "./fine_tuned_bertmini"
 
 def initialize_classifier_resources():
     global CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER
@@ -26,7 +26,7 @@ def initialize_classifier_resources():
         CLASSIFIER_MODEL.eval() # Set to evaluation mode
         print("Fine-tuned BERT classifier loaded successfully.")
     except Exception as e:
-        print(f"ERROR: Could not load fine-tuned DistilBERT model: {e}")
+        print(f"ERROR: Could not load fine-tuned BERT model: {e}")
 
 def classify_article_text(title, text_content):
     if not CLASSIFIER_MODEL or not CLASSIFIER_TOKENIZER:
@@ -39,7 +39,7 @@ def classify_article_text(title, text_content):
         print("  Empty input for classification.")
         return None
 
-    print("  Classifying article with fine-tuned DistilBERT...")
+    print("  Classifying article with fine-tuned BERT...")
     inputs = CLASSIFIER_TOKENIZER(combined_input, return_tensors="pt", truncation=True, padding=True, max_length=512)
     with torch.no_grad():
         outputs = CLASSIFIER_MODEL(**inputs)

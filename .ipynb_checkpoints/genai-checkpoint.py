@@ -10,7 +10,7 @@ from ./data_preprocessing/vector_embeddings import *
 from search_and_classifier import *
 from news_extraction import fetch_and_extract_article_data_from_url
 from factcheck import *
-from sentiment_analysis import initialize_sentiment_analyzers, get_sentiment_vader
+from sentiment_analysis import initialize_sentiment_analyzers, get_article_sentiment
 import asyncio
 
 load_dotenv()
@@ -117,8 +117,8 @@ def generate_final_explanation(analysis_data):
         if sim_arts:
             for art in sim_arts[:2]:
                 lbl = "Unknown"
-                if art.get('label') == 0: lbl = "Known FAKE"
-                elif art.get('label') == 1: lbl = "Known REAL"
+                if art.get('label') == 0: lbl = "FAKE"
+                elif art.get('label') == 1: lbl = "REAL"
                 user_prompt_content += f"  - Similar to: \"{art.get('title', 'N/A')}\" ({lbl}, Score: {art.get('similarity_score', 0):.2f})\n"
         else: 
             user_prompt_content += "  - No highly similar articles found.\n"
@@ -297,6 +297,4 @@ if __name__ == "__main__":
     for user_input in test_inputs:
         # To run the async function from this synchronous __main__ block:
         results = asyncio.run(analyze_article(user_input))
-        # Or use the sync wrapper if you prefer:
-        # results = master_analyze_article_sync_wrapper(user_input)
         print("\n" + "#" * 70 + "\n")

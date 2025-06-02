@@ -10,7 +10,7 @@ from ./data_preprocessing/vector_embeddings import *
 from search_and_classifier import *
 from news_extraction import fetch_and_extract_article_data_from_url
 from factcheck import *
-from sentiment_analysis import initialize_sentiment_analyzers, get_sentiment_vader
+from sentiment_analysis import initialize_sentiment_analyzers, get_article_sentiment
 import asyncio
 
 load_dotenv()

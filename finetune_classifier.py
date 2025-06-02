@@ -28,7 +28,7 @@ NEW_CSV_TITLE_COLUMN = "title"
 # Training Hyperparameters
 MAX_LENGTH = 512       # Max sequence length for tokenizer
 BATCH_SIZE = 32        
-EPOCHS = 3             # Number of training epochs (2-4 is common for fine-tuning)
+EPOCHS = 5            
 LEARNING_RATE = 1e-5   # AdamW optimizer learning rate
 RANDOM_SEED = 42       # For reproducibility
 
