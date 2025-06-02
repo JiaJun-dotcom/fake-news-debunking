@@ -58,7 +58,7 @@ if __name__ == "__main__":
     sample_texts = [
         "This is a wonderfully fantastic and joyous occasion! I am so happy.",
         "I hate this terrible, awful, and disgusting product. It's the worst!",
-        "The weather today is neutral and plain.",
+        "Waymo’s robotaxis are under investigation for crashes and traffic law violations",
         "Despite the initial setbacks, the team showed remarkable resilience and ultimately achieved a surprising victory, though challenges remain.",
         "This is not bad, but it's not good either.",
         "The movie was AMAZING!!! So good, I loved it.",

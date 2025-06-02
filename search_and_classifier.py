@@ -24,6 +24,9 @@ EMBEDDING_MODEL_NAME = "text-embedding-005"
 FINE_TUNED_MODEL_PATH = "./fine_tuned_bertmini"
 VECTOR_SEARCH_INDEX_NAME = "vector_index"
 
+VERTEX_EMBEDDING_MODEL = None
+NEWS_COLLECTION = None
+
 def initialize_classifier_resources():
     global MONGO_CLIENT, NEWS_COLLECTION, CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER, VERTEX_EMBEDDING_MODEL
 
@@ -61,9 +64,8 @@ def initialize_classifier_resources():
     else:
         try:
             vertexai.init(project=PROJECT_ID, location=LOCATION)
-            try:
-                VERTEX_EMBEDDING_MODEL = TextEmbeddingModel.from_pretrained(EMBEDDING_MODEL_NAME)
-                print(f"Vertex AI Embedding model ({EMBEDDING_MODEL_NAME}) loaded successfully for queries.")
+            VERTEX_EMBEDDING_MODEL = TextEmbeddingModel.from_pretrained(EMBEDDING_MODEL_NAME)
+            print(f"Vertex AI Embedding model ({EMBEDDING_MODEL_NAME}) loaded successfully for queries.")
         except Exception as e:
             print(f"ERROR: Could not load Vertex AI Embedding model: {e}")
     return True
@@ -100,7 +102,7 @@ def classify_article_text(title, text_content):
 
 # --- 3. Semantic Similarity Search (Atlas Vector Search) ---
 def find_similar_articles_vector_search(query_title, query_text, num_results=5):
-    if not NEWS_COLLECTION or not VERTEX_EMBEDDING_MODEL:
+    if NEWS_COLLECTION is None or VERTEX_EMBEDDING_MODEL is None:
         print("  MongoDB connection or Vertex Embedding model not available. Skipping vector search.")
         return []
 
@@ -147,3 +149,46 @@ def find_similar_articles_vector_search(query_title, query_text, num_results=5):
         return []
     
     
+if __name__ == "__main__":
+    # Load .env variables (already done at the top)
+
+    initialize_classifier_resources()
+
+    print("\n--- Testing Semantic Similarity Search (Vector Search) ---")
+
+    # Define some sample queries. These should ideally resemble the kind of
+    # content you have embeddings for in your database.
+    test_queries = [
+        {
+            "title": "New Breakthrough in Cancer Research Announced",
+            "text": "Scientists today unveiled a promising new drug that has shown remarkable results in early trials for treating lung cancer. The research, published in a leading medical journal, suggests this could be a game-changer."
+        },
+        {
+            "title": "Election Results Disputed Amidst Claims of Irregularities",
+            "text": "Following the recent presidential election, the losing candidate has refused to concede, citing widespread voter fraud and calling for a full audit. International observers have expressed concerns over the stability of the region."
+        },
+        {
+            "title": "Tech Giant Launches Revolutionary Smartphone",
+            "text": "The latest smartphone from a major tech company boasts an innovative foldable screen, an AI-powered camera system, and unprecedented battery life. Pre-orders have already exceeded expectations."
+        },
+        { # A query that might be very different from your news data
+            "title": "My Cat's Daily Adventures",
+            "text": "My cat, Whiskers, spent the morning chasing a sunbeam. Later, he napped on the keyboard. For dinner, he demanded tuna. It was a busy day for him."
+        }
+    ]
+
+    for i, query in enumerate(test_queries):
+        print(f"\n\n--- Query {i+1} ---")
+        print(f"Query Title: {query['title']}")
+        print(f"Query Text (snippet): {query['text'][:100]}...")
+
+        similar_articles = find_similar_articles_vector_search(query["title"], query["text"], num_results=3)
+
+        if similar_articles:
+            print(f"\n  Found {len(similar_articles)} similar articles in MongoDB:")
+            for article in similar_articles:
+                print(f"    - ID: {article.get('_id')}, Label: {article.get('label')}, Similarity: {article.get('similarity_score', 0.0):.4f}")
+                # If you stored 'title_snippet': print(f"      Snippet: {article.get('title_snippet')}")
+        else:
+            print("  No similar articles found or an error occurred during search.")
+        print("-" * 30)

@@ -13,7 +13,7 @@ import vertexai
 load_dotenv()
 
 # --- Configuration ---
-FINE_TUNED_MODEL_PATH = "./fine_tuned_bertmini"
+FINE_TUNED_MODEL_PATH = "./fine_tuned_neurobert_small"
 
 def initialize_classifier_resources():
     global CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER

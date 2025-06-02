@@ -78,3 +78,35 @@ def fetch_and_extract_article_data_from_url(url):
     except Exception as e_main:
         print(f"    Error processing URL {url}: {e_main}")
     return article_title, None, None, url # Return defaults on error
+
+
+if __name__ == "__main__":
+    # load_dotenv() is at the top, effective when script is run directly.
+
+    print("\n--- Testing News Extraction from URLs ---")
+
+    # IMPORTANT: Website structures change! These URLs might work now but could break later.
+    test_urls = [
+        "https://www.reuters.com/world/europe/russia-pounds-ukraines-kharkiv-says-it-has-seized-two-more-villages-2024-05-14/", # Major news
+        "https://www.bbc.com/news/world-us-canada-68993200", # Another major news
+        "https://techcrunch.com/2024/05/13/google-search-is-getting-an-ai-makeover/", # Tech blog
+        "https://www.theverge.com/2024/5/14/24156238/google-io-2024-ai-android-gemini-search-biggest-announcements", # Another tech blog
+        "https://www.simplypsychology.org/cognitive-dissonance.html", # Informational article
+        "http://nonexistentfakewebsite12345.com/article", # Example of a bad URL
+        "https://example.com" # Simple page
+    ]
+
+    for url in test_urls:
+        title, text, description, canon_url = fetch_and_extract_article_data_from_url(url)
+
+        print("\n--- Results for:", url, "---")
+        print(f"  Canonical URL: {canon_url}")
+        print(f"  Extracted Title: {title}")
+        print(f"  Extracted Description (first 100 chars): {str(description)[:100] if description else 'N/A'}...")
+        
+        if text:
+            print(f"  Extracted Text Length: {len(text)}")
+            print(f"  Text Snippet (first 200 chars): {text[:200].strip()}...")
+        else:
+            print("  Extracted Text: None or Empty")
+        print("-" * 50)
