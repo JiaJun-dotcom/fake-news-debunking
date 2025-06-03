@@ -13,7 +13,7 @@ import vertexai
 load_dotenv()
 
 # --- Configuration ---
-FINE_TUNED_MODEL_PATH = "./fine_tuned_bertmini"
+FINE_TUNED_MODEL_PATH = "./fine_tuned"
 
 def initialize_classifier_resources():
     global CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER
@@ -57,4 +57,4 @@ def classify_article_text(title, text_content):
     return {"prediction": predicted_label, "confidence": confidence}
 
 initialize_classifier_resources()
-classify_article_text("trump is dead!!!!!!", "donald trump got shot in california, June 20 2025, and died.")
+classify_article_text("May Brexit offer would hurt, cost EU citizens - EU parliament", "BRUSSELS (Reuters) - British Prime Minister Theresa May s offer of  settled status  for EU residents is flawed and will leave them with fewer rights after Brexit, the European Parliament s Brexit coordinator said on Tuesday. A family of five could face a bill of 360 pounds to acquire the new status, Guy Verhofstadt told May s Brexit Secretary David Davis in a letter seen by Reuters    a very significant amount for a family on low income . Listing three other concerns for the EU legislature, which must approve any treaty on the March 2019 exit, Verhofstadt told Davis:  Under your proposals, EU citizens will definitely notice a deterioration of their status as a result of Brexit. And the Parliament s aim all along has been that EU citizens, and UK citizens in the EU-27, should notice no difference.  Verhofstadt, a former Belgian prime minister, wrote in response to Davis, who had written to him after Parliament complained last week that there remained  major issues  to be settled on the rights of the 3 million EU citizens in Britain. On Tuesday, he told reporters that Parliament was determined that expatriates should not become  victims of Brexit . May had unveiled more details last week of a system aimed at giving people already in Britain a quick and cheap way of asserting their rights to stay there indefinitely. The issue, along with how much Britain owes and the new EU-UK border across Ireland, is one on which the EU wants an outline agreement before opening talks on the future of trade. Verhofstadt said lawmakers were not dismissing British efforts to streamline applications but saw flaws in the nature of  settled status  itself. As well as the cost, which is similar to that of acquiring a British passport, he cited three others: - Europeans should simply  declare  a whole household resident, without needing an  application  process; the burden of proof should be on the British authorities to deny them rights. - more stringent conditions on criminal records could mean some EU residents, including some now with permanent resident status, being deported for failing to gain  settled status . - EU residents would lose some rights to bring relatives to Britain as the new status would give them the same rights as British people, who now have fewer rights than EU citizens.   ")
