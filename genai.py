@@ -1,24 +1,39 @@
+# genai.py (Comprehensive News Analyzer)
+
 import os
 import json
 import time
+import re
 from dotenv import load_dotenv
 from llama_cpp import Llama
-import vertexai
+# import vertexai # Not directly used here if Llama.cpp is the GenAI
 import torch
-from tactic_detection import *
-from ./data_preprocessing/vector_embeddings import *
-from search_and_classifier import *
-from news_extraction import fetch_and_extract_article_data_from_url
-from factcheck import *
-from sentiment_analysis import initialize_sentiment_analyzers, get_article_sentiment
 import asyncio
 
+try:
+    from tactic_detection import initialize_tactic_resources, \
+                                detect_disinformation_tactics
+    from search_and_classifier import initialize_classifier_resources, \
+                                classify_article_text, find_similar_articles_vector_search, \
+                                MONGO_CLIENT as NC_MONGO_CLIENT # Expose MONGO_CLIENT for closing
+    from news_extraction import fetch_and_extract_article_data_from_url
+    from factcheck import initialize_fact_checker_resources, \
+                             extract_key_claims_with_t5, run_fact_check_on_extracted_claims
+    from sentiment_analysis import initialize_sentiment_analyzers, get_article_sentiment, \
+                                   VADER_ANALYZER # Expose VADER if needed by other modules directly
+except ImportError as e:
+    print(f"ERROR: Could not import from module files. Details: {e}")
+    print("Ensure tactic_detector.py, news_classifier.py, news_extraction.py, fact_checker.py, sentiment_analyzer.py exist and are correctly structured.")
+    exit()
+
+# --- Load Environment Variables ---
 load_dotenv()
 
-PROJECT_ID = os.environ.get("PROJECT_ID")
-LOCATION = os.environ.get("LOCATION")
+# --- Configuration ---
+# GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID") # Not needed if only Llama.cpp for GenAI
+# GCP_LOCATION = os.environ.get("GCP_LOCATION")   # Not needed if only Llama.cpp for GenAI
 
-# --- Global Client for GenAI --- 
+# --- Global Client for GenAI (Llama.cpp) ---
 LLAMA_CPP_MODEL = None
 GGUF_REPO_ID = "unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF"
 GGUF_FILENAME = "DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf"
@@ -27,139 +42,161 @@ GGUF_FILENAME = "DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf"
 ALL_RESOURCES_INITIALIZED = False
 
 def initialize_all_module_resources():
-    global ALL_RESOURCES_INITIALIZED, LLAMA_CPP_MODEL # Add LLAMA_CPP_MODEL here
+    global ALL_RESOURCES_INITIALIZED, LLAMA_CPP_MODEL
     if ALL_RESOURCES_INITIALIZED:
+        # print("All resources already initialized.") # Can be noisy
         return True
 
     print("--- Initializing All Application Resources ---")
-    # Initialize each module. They should handle their own client setups.
-    # These functions should ideally return True on success, False on failure.
     tactic_ok = initialize_tactic_resources()
     classifier_ok = initialize_classifier_resources()
     fact_checker_ok = initialize_fact_checker_resources()
     sentiment_analyzer_ok = initialize_sentiment_analyzers()
-    
+
     print(f"--- Initializing Llama.cpp Model from HF Repo: {GGUF_REPO_ID}, File: {GGUF_FILENAME} ---")
     llama_cpp_ok = False
     try:
-        if torch.cuda.is_available():
-            print("CUDA detected by PyTorch. Llama.cpp will attempt GPU offload if compiled with CUDA support.")
+        n_gpu_layers_to_offload = -1 if torch.cuda.is_available() else 0
+        if n_gpu_layers_to_offload == -1:
+            print("CUDA detected by PyTorch. Llama.cpp will attempt to offload all possible layers to GPU.")
         else:
-            print("No CUDA GPU detected by PyTorch. Model will run on CPU.")
+            print("No CUDA GPU detected by PyTorch. Llama.cpp Model will run on CPU.")
 
         LLAMA_CPP_MODEL = Llama.from_pretrained(
             repo_id=GGUF_REPO_ID,
             filename=GGUF_FILENAME,
-            n_ctx=4096,  # Context window size. Adjust if needed.
-            n_batch=512, # Can help with prompt processing speed
-            verbose=False # Set to True for more llama.cpp output
+            n_ctx=4096,
+            n_gpu_layers=n_gpu_layers_to_offload,
+            n_batch=512,
+            verbose=False
         )
+        print(f"Llama.cpp model loaded. GPU layers target: {n_gpu_layers_to_offload}")
         llama_cpp_ok = True
     except Exception as e:
         print(f"ERROR initializing Llama.cpp model from Hugging Face: {e}")
-        print("Ensure the repo_id and filename are correct, and you have internet access.")
-        
-    if tactic_ok and classifier_ok and fact_checker_ok and sentiment_ok and llama_cpp_ok:
+        print(f"Ensure GGUF_MODEL_FILENAME in .env points to a valid GGUF file (e.g., Q4_K_M for 16GB RAM).")
+
+    if tactic_ok and classifier_ok and fact_checker_ok and sentiment_analyzer_ok and llama_cpp_ok:
         ALL_RESOURCES_INITIALIZED = True
         print("--- All Application Resources Initialized Successfully ---")
         return True
     else:
         print("--- WARNING: One or more modules failed to initialize. Functionality may be limited. ---")
-        ALL_RESOURCES_INITIALIZED = False 
-        return False 
-        
+        if not tactic_ok: print("  - Tactic detector resources failed.")
+        if not classifier_ok: print("  - Classifier/Vector Search resources failed.")
+        if not fact_checker_ok: print("  - Fact checker resources failed.")
+        if not sentiment_analyzer_ok: print("  - Sentiment analyzer resources failed.")
+        if not llama_cpp_ok: print("  - Llama.cpp GenAI model failed.")
+        ALL_RESOURCES_INITIALIZED = False
+        return False
+
 
 # --- Generative AI Summarization ---
 def generate_final_explanation(analysis_data):
+    # (This function remains the same as your last correct version,
+    #  it already expects 'similar_articles_summary' in analysis_data)
     if not LLAMA_CPP_MODEL:
-        error_msg = "Llama.cpp(GGUF) model not initialized. Cannot generate explanation."
+        error_msg = "Llama.cpp (GGUF) model not initialized. Cannot generate explanation."
         print(f"ERROR: {error_msg}")
-        return f"Error: {error_msg}\nRaw Data:\n{json.dumps(analysis_data, indent=2)}"
-    
-    # --- Construct the User Content for the Chat ---
-    # The "system" prompt can be set, and the user prompt will contain the analysis data and task.
-    system_message = "You are a helpful news analysis assistant. Your task is to analyze the provided assessment data of a news article and generate a concise, easy-to-understand summary for a general user."
-    
-    user_prompt_content = "Please analyze the following assessment data:\n\n"
+        return f"Error: {error_msg}\nRaw Data (for debugging):\n{json.dumps(analysis_data, indent=2)}"
+
+    system_message = "You are a helpful news analysis assistant..." # Your full system message
+    user_prompt_content = "Please analyze the following assessment data for the provided news content:\n\n"
     user_prompt_content += "--- ARTICLE ASSESSMENT DATA ---\n"
     user_prompt_content += f"News Title: {analysis_data.get('processed_title', 'N/A')}\n"
     user_prompt_content += f"Source (if URL provided): {analysis_data.get('source_url', 'N/A')}\n\n"
 
-    # Classifier(fake/real)
+    # 1. Classifier Prediction
     if analysis_data.get('classification'):
         cls_res = analysis_data['classification']
-        user_prompt_content += f"1. Our Classifier Prediction: {cls_res.get('prediction', 'N/A').upper()} (Confidence: {cls_res.get('confidence', 0):.0%})\n"
-    
-    # Sentiment analysis
+        if cls_res and not cls_res.get("error"):
+            user_prompt_content += f"1. Classifier Prediction: **{cls_res.get('prediction', 'N/A').upper()}** (Confidence: {cls_res.get('confidence', 0):.0%})\n"
+        else:
+            user_prompt_content += f"1. Classifier Prediction: Error - {cls_res.get('error', 'Not Available')}\n"
+    else:
+        user_prompt_content += "1. Classifier Prediction: Not Run.\n"
+
+    # 2. Overall Sentiment
     if analysis_data.get('overall_article_sentiment'):
         sent_data = analysis_data['overall_article_sentiment']
         sentiment_value_desc = "neutral"
-
-        if sent_data:
-            compound = sent_data.get('compound', 0) # compound gives us the total score, giving a gauge of sentiment and magnitude.
-            if compound >= 0.05: sentiment_value_desc = f"Positive (VADER score: {compound:.2f})"
-            elif compound <= -0.05: sentiment_value_desc = f"Negative (VADER score: {compound:.2f})"
-            user_prompt_content += f"2. Overall Sentiment of the text: {sentiment_value_desc}\n"
+        if sent_data and not sent_data.get("error"):
+            source = sent_data.get('source', 'Unknown')
+            if source.lower() == 'vader':
+                compound = sent_data.get('compound', 0)
+                if compound >= 0.05: sentiment_value_desc = f"Positive (VADER score: {compound:.2f})"
+                elif compound <= -0.05: sentiment_value_desc = f"Negative (VADER score: {compound:.2f})"
+            user_prompt_content += f"2. Overall Sentiment: {sentiment_value_desc}\n"
         else:
-            user_prompt_content += "2. Overall Sentiment of the text: Not available.\n"
-    
-    # Tactic detection
+            user_prompt_content += f"2. Overall Sentiment: Error - {sent_data.get('error', 'Not Available')}\n"
+    else:
+        user_prompt_content += "2. Overall Sentiment: Not Run.\n"
+
+    # 3. Detected Disinformation Tactics
     if analysis_data.get('detected_disinformation_tactics'):
         tactics = analysis_data['detected_disinformation_tactics']
-        user_prompt_content += f"3. Detected Disinformation Tactics: {', '.join(tactics) if tactics else 'None detected by current rules'}\n"
-    else:
-        user_prompt_content += "3. Detected Disinformation Tactics: Not available.\n"
-      
-    # Vector search for similar articles
-    if analysis_data.get('similar_articles_from_db'):
-        sim_summary = analysis_data['similar_articles_from_db']
-        user_prompt_content += "4. Semantic Similarity to Our Database:\n"
-        
-        fake_count = sim_summary.get("count_fake", 0)
-        real_count = sim_summary.get("count_real", 0)
-        
-        if fake_count > 0 and real_count > 0:
-            fake_scores_str = ", ".join(sim_summary.get("fake_scores", []))
-            real_scores_str = ", ".join(sim_summary.get("real_scores", []))
-            user_prompt_content += f"  - This article is semantically similar to **{fake_count} known FAKE article(s)** (scores: [{fake_scores_str}]) and **{real_count} known REAL article(s)** (scores: [{real_scores_str}]) in our database.\n"
-        elif fake_count > 0:
-            fake_scores_str = ", ".join(sim_summary.get("fake_scores", []))
-            user_prompt_content += f"  - This article is semantically similar to **{fake_count} known FAKE article(s)** in our database (scores: [{fake_scores_str}]).\n"
-        elif real_count > 0:
-            real_scores_str = ", ".join(sim_summary.get("real_scores", []))
-            user_prompt_content += f"  - This article is semantically similar to **{real_count} known REAL article(s)** in our database (scores: [{real_scores_str}]).\n"
+        if isinstance(tactics, list):
+            user_prompt_content += f"3. Detected Disinformation Tactics: {', '.join(tactics) if tactics else 'None detected by current rules'}\n"
+        elif isinstance(tactics, dict) and tactics.get("error"):
+            user_prompt_content += f"3. Detected Disinformation Tactics: Error - {tactics.get('error')}\n"
         else:
-            raw_similar = analysis_data.get("similar_articles_from_db")
-            if isinstance(raw_similar, list) and len(raw_similar) > 0:
-                 user_prompt_content += "  - Some similar articles were found, but their fake/real status was not definitively matched to known labels in the top results, or no strong similarities were found.\n"
-            else:
-                 user_prompt_content += "  - No highly similar articles with known fake/real labels were found.\n"
+             user_prompt_content += "3. Detected Disinformation Tactics: Not available or unexpected format.\n"
     else:
-        user_prompt_content += "4. Semantic Similarity to Our Database: Not Run or No Results.\n"
-    
-    # Google Fact Check API for claim fact-checking.
+        user_prompt_content += "3. Detected Disinformation Tactics: Not Run.\n"
+
+    # 4. Semantic Similarity (USING THE PREPARED SUMMARY)
+    if analysis_data.get('similar_articles_summary'):
+        sim_summary = analysis_data['similar_articles_summary']
+        user_prompt_content += "4. Semantic Similarity to Our Database:\n"
+        if sim_summary.get("error"):
+            user_prompt_content += f"  - Error during similarity search: {sim_summary.get('error')}\n"
+        else:
+            fake_count = sim_summary.get("count_fake", 0)
+            real_count = sim_summary.get("count_real", 0)
+            if fake_count > 0 and real_count > 0:
+                fake_scores_str = ", ".join(sim_summary.get("fake_scores", []))
+                real_scores_str = ", ".join(sim_summary.get("real_scores", []))
+                user_prompt_content += f"  - This article is semantically similar to **{fake_count} known FAKE article(s)** (scores: [{fake_scores_str}]) and **{real_count} known REAL article(s)** (scores: [{real_scores_str}]) in our database.\n"
+            elif fake_count > 0:
+                fake_scores_str = ", ".join(sim_summary.get("fake_scores", []))
+                user_prompt_content += f"  - This article is semantically similar to **{fake_count} known FAKE article(s)** in our database (scores: [{fake_scores_str}]).\n"
+            elif real_count > 0:
+                real_scores_str = ", ".join(sim_summary.get("real_scores", []))
+                user_prompt_content += f"  - This article is semantically similar to **{real_count} known REAL article(s)** in our database (scores: [{real_scores_str}]).\n"
+            else:
+                if sim_summary.get("raw_count", 0) > 0:
+                     user_prompt_content += "  - Some similar articles were found, but their fake/real status was not definitively matched to known labels in the top results, or no strong similarities were found to labeled articles.\n"
+                else:
+                     user_prompt_content += "  - No highly similar articles were found in our database.\n"
+    else:
+        user_prompt_content += "4. Semantic Similarity to Our Database: Analysis not available or no results.\n"
+
+    # 5. Fact Check API Results
     if analysis_data.get('fact_check_api_results'):
         fc_res = analysis_data['fact_check_api_results']
-        user_prompt_content += "5. Google Fact Check API Results (for extracted claims):\n"
+        user_prompt_content += "5. Google Fact Check API Results (for automatically extracted claims):\n"
         fc_empty = True
-        if fc_res:
-            for claim, results in fc_res.items():
-                if results and not results[0].get("error"):
+        if fc_res and isinstance(fc_res, dict):
+            for claim, results_for_claim in fc_res.items():
+                if results_for_claim and not (isinstance(results_for_claim, list) and results_for_claim[0].get("error")):
                     fc_empty = False
                     user_prompt_content += f"  For claim: \"{claim[:80]}...\"\n"
-                    for res_item in results[:1]: user_prompt_content += f"    - By {res_item.get('publisher', 'N/A')}: {res_item.get('rating', 'N/A')}\n"
-        if fc_empty: 
-            user_prompt_content += "  - No relevant fact-checks found or claims not suitable.\n"
+                    for res_item in results_for_claim[:1]:
+                        user_prompt_content += f"    - By {res_item.get('publisher', 'N/A')}: Rating: '{res_item.get('rating', 'N/A')}'\n"
+                elif results_for_claim and isinstance(results_for_claim, list) and results_for_claim[0].get("error"):
+                    user_prompt_content += f"  For claim: \"{claim[:80]}...\" - Error during fact-check: {results_for_claim[0].get('error')}\n"
+                    fc_empty = False
+        elif isinstance(fc_res, dict) and fc_res.get("error"):
+             user_prompt_content += f"  Error during fact-checking process: {fc_res.get('error')}\n"
+             fc_empty = False
+        if fc_empty:
+            user_prompt_content += "  - No relevant fact-checks found by the API for the extracted claims, or claims were not suitable/extracted.\n"
+    else:
+        user_prompt_content += "5. Google Fact Check API Results: Not Run or No Claims.\n"
 
     user_prompt_content += "\n--- END OF ASSESSMENT DATA ---\n\n"
-    user_prompt_content += "Task: Based ONLY on the provided assessment data above, generate a concise summary for a user. Your response should be structured as follows:\n"
-    user_prompt_content += "1. **Overall Trustworthiness Assessment:** (e.g., 'This article appears highly unreliable due to multiple red flags.', 'This article shows some concerning signals and should be approached with caution.', 'This article appears generally credible, but consider these points.').\n"
-    user_prompt_content += "2. **Key Reasons:** Briefly explain the main reasons for your assessment, referencing specific findings from the data (e.g., 'The content was classified as FAKE with high confidence and exhibits several disinformation tactics such as [tactic1, tactic2].', 'While classified as REAL, it shares similarity with some known FAKE articles and uses loaded language.', 'The article is similar to several known FAKE articles and uses vague sourcing.').\n"
-    user_prompt_content += "3. **Actionable Advice/Things to Look Out For:** Offer 1-2 concrete pieces of advice for the user (e.g., 'Verify these claims with trusted news sources.', 'Be aware of the emotional language used, which might aim to persuade rather than inform.', 'Cross-reference information about [specific entity/claim mentioned].').\n"
-    user_prompt_content += "Keep the language clear, objective, and avoid making definitive statements of truth/falsity not directly supported by the provided data (especially the classifier's prediction which is probabilistic). Focus on guiding the user to think critically."
+    user_prompt_content += "Task: Based ONLY on the provided assessment data above, generate a concise summary for a general user..." # Your full task instructions
     user_prompt_content += "\n\nUser-Facing Explanation:"
-
-    print("\n--- Sending Prompt to Llama.cpp Model (Chat Completion) ---")
 
     try:
         response = LLAMA_CPP_MODEL.create_chat_completion(
@@ -167,38 +204,31 @@ def generate_final_explanation(analysis_data):
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_prompt_content}
             ],
-            max_tokens=700,    
-            temperature=0.5,    
-            top_p=0.9
+            max_tokens=700, temperature=0.25, top_p=0.9,
         )
         explanation = response["choices"][0]["message"]["content"].strip()
-        
-        print("--- Llama.cpp Model Response Received ---")
         return explanation
     except Exception as e:
         print(f"Error calling Llama.cpp Model create_chat_completion: {e}")
-        return f"Error generating final explanation using Llama.cpp. (Error: {e})"
+        return f"Error generating final explanation using Llama.cpp. (Details: {e})"
 
-    
-# --- Main Orchestration Function ---
-async def analyze_article(user_input_url_or_text):
+
+# --- Main Orchestration Function (Async Internals) ---
+async def analyze_article(user_input_url_or_text): 
     if not ALL_RESOURCES_INITIALIZED:
-        # Attempt to initialize if not already done 
-        if not initialize_all_module_resources():
-             return {"error": "Critical resources failed to initialize.",
-                    "final_user_explanation": "System error: Could not initialize analysis components."}
-    
-    print(f"\n\n<<<<< Starting Comprehensive Analysis for Input: {user_input_url_or_text[:100]}... >>>>>")
+         return {"error": "Critical resources not initialized.",
+                "final_user_explanation": "System error: Analysis components not ready."}
+
+    print(f"\n\n<<<<< Starting ASYNC Analysis: {user_input_url_or_text[:100]}... >>>>>")
     article_title = "User Input"
     article_text = None
     article_description = None
-    source_url_for_analysis = None # The URL used for tactic source check & prompt
-    canonical_url_from_extraction = None # The canonical URL from extraction lib
-    
+    source_url_for_analysis = None
+    canonical_url_from_extraction = None
+
     is_url = bool(re.match(r'^https?://', user_input_url_or_text, re.IGNORECASE))
     if is_url:
         source_url_for_analysis = user_input_url_or_text
-        print(f"Input is a URL: {source_url_for_analysis}")
         title, text, description, url_final = await asyncio.to_thread(
             fetch_and_extract_article_data_from_url, user_input_url_or_text
         )
@@ -211,7 +241,7 @@ async def analyze_article(user_input_url_or_text):
             return {"error": "Could not scrape significant text from URL.",
                     "final_user_explanation": "Could not process the URL to get article content."}
     else:
-        print("Input is direct text.")
+        # print("Input is direct text.") # Can be noisy
         article_text = user_input_url_or_text
         first_line = article_text.split('\n', 1)[0]
         if len(first_line) < 120 and len(first_line.split()) < 20: article_title = first_line
@@ -221,95 +251,99 @@ async def analyze_article(user_input_url_or_text):
         return {"error": "No text content to analyze.",
                 "final_user_explanation": "No text content provided for analysis."}
 
-    print(f"\n--- Processing ---\nTitle: {article_title[:80]}...\nDescription: {str(article_description)[:80]}...\nText (start): {article_text[:100]}...")
-
-    print("\n[Creating concurrent analysis tasks...]")    
-    
-    print("\n[Fake/Real Classification]")
+    # --- Create tasks for concurrent execution ---
     task_classify = asyncio.to_thread(classify_article_text, article_title, article_text)
-
-    print("\n[Semantic Similarity Search]")
-    task_vector_search = asyncio.to_thread(find_similar_articles_vector_search, article_title, article_text, 3)
-    
-    print("\n[Disinformation Tactic Detection]")
+    task_vector_search_raw = asyncio.to_thread(find_similar_articles_vector_search, article_title, article_text, 5)
     task_tactic_detect = asyncio.to_thread(detect_disinformation_tactics, article_title, article_text, source_url_for_analysis)
-    
-    print("\n[Overall Sentiment Analysis]")
-    task_sentiment = asyncio.to_thread(get_article_sentiment, article_text) # Using "vader" for speed
-   
-    async def run_fact_checking_pipeline():
-        print("  [Starting fact-checking sub-pipeline...]")
+    task_sentiment = asyncio.to_thread(get_article_sentiment, article_text, "vader")
+
+    async def run_fact_checking_pipeline_async():
         claims = await asyncio.to_thread(extract_key_claims_with_t5, article_text, article_title, article_description, 2)
-        if claims:
-            print(f"    Claims extracted for fact-checking: {claims}")
-            results = await asyncio.to_thread(run_fact_check_on_extracted_claims, claims)
-            print("  [Fact-checking sub-pipeline complete.]")
-            return results
-        else:
-            print("    No claims extracted, skipping fact_check API calls.")
-            print("  [Fact-checking sub-pipeline complete (no claims).]")
-            return {} # Return empty dict if no claims
+        return await asyncio.to_thread(run_fact_check_on_extracted_claims, claims if claims else [])
+    task_fact_check_pipeline = run_fact_checking_pipeline_async()
 
-    task_fact_check_pipeline = run_fact_checking_pipeline()
-
-    print("[Executing analysis tasks concurrently...]")
     results = await asyncio.gather(
         task_classify,
-        task_vector_search,
+        task_vector_search_raw,
         task_tactic_detect,
         task_sentiment,
         task_fact_check_pipeline,
-        return_exceptions=True # Important to catch errors from individual tasks
+        return_exceptions=True
     )
-    print("[All analysis tasks complete.]")
-    
-    # Unpack results and handle potential errors
-    classification_result = results[0] if not isinstance(results[0], Exception) else {"error": str(results[0])}
-    similar_articles = results[1] if not isinstance(results[1], Exception) else {"error": str(results[1])}
-    detected_tactics = results[2] if not isinstance(results[2], Exception) else {"error": str(results[2])}
-    overall_sentiment_result = results[3] if not isinstance(results[3], Exception) else {"error": str(results[3])}
-    fact_check_results = results[4] if not isinstance(results[4], Exception) else {"error": str(results[4])}
-    
-    # --- Compile Data for GenAI ---
+
+    classification_result = results[0] if not isinstance(results[0], Exception) else {"error": f"Classifier: {str(results[0])}"}
+    similar_articles_raw_output = results[1]
+    detected_tactics = results[2] if not isinstance(results[2], Exception) else {"error": f"TacticDetect: {str(results[2])}"}
+    overall_sentiment_result = results[3] if not isinstance(results[3], Exception) else {"error": f"Sentiment: {str(results[3])}"}
+    fact_check_results = results[4] if not isinstance(results[4], Exception) else {"error": f"FactCheck: {str(results[4])}"}
+
+    processed_similar_articles_summary = {
+        "count_fake": 0, "fake_scores": [],
+        "count_real": 0, "real_scores": [],
+        "raw_count": 0 # To know if vector search returned anything at all
+    }
+    if isinstance(similar_articles_raw_output, list):
+        processed_similar_articles_summary["raw_count"] = len(similar_articles_raw_output)
+        for doc in similar_articles_raw_output:
+            label = doc.get("label")
+            score = doc.get("similarity_score", 0.0)
+            if label == 0: 
+                processed_similar_articles_summary["count_fake"] += 1
+                processed_similar_articles_summary["fake_scores"].append(f"{score:.3f}")
+            elif label == 1: 
+                processed_similar_articles_summary["count_real"] += 1
+                processed_similar_articles_summary["real_scores"].append(f"{score:.3f}")
+    elif isinstance(similar_articles_raw_output, dict) and "error" in similar_articles_raw_output:
+        processed_similar_articles_summary["error"] = similar_articles_raw_output["error"]
+    # *** END OF PROCESSING similar_articles_raw_output ***
+
     analysis_data_for_genai = {
         "user_input_source": user_input_url_or_text,
         "processed_title": article_title,
         "processed_description": article_description,
-        "source_url": canonical_url_from_extraction, # Use canonical URL for prompt
+        "source_url": canonical_url_from_extraction,
         "classification": classification_result,
         "overall_article_sentiment": overall_sentiment_result,
         "detected_disinformation_tactics": detected_tactics,
-        "similar_articles_from_db": similar_articles,
+        "similar_articles_summary": processed_similar_articles_summary, 
         "fact_check_api_results": fact_check_results,
     }
 
-    print("\n[5. Generating Final Explanation with GenAI]")
+    print("\n[Generating Final Explanation with GenAI]") 
     final_explanation = await asyncio.to_thread(generate_final_explanation, analysis_data_for_genai)
     analysis_data_for_genai["final_user_explanation"] = final_explanation
-    
-    print("\n--- FINAL USER EXPLANATION ---")
-    print(final_explanation)
-    
+        
     return analysis_data_for_genai
 
-
+# Synchronous wrapper for FastAPI
 def analyze_article_wrapper(user_input_url_or_text):
-    # This runs the async function in a new event loop.
-    # Since the caller (like FastAPI's run_in_threadpool) is synchronous, cannot pass in an async function directly.
-    return asyncio.run(analyze_article(user_input_url_or_text))
+    try:
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+        if loop.is_closed(): 
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError: # No current event loop in this thread
+        print("No current event loop, creating a new one.")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    result = loop.run_until_complete(analyze_article(user_input_url_or_text))
+    # print(f"Sync wrapper finished for: {user_input_url_or_text[:50]}")
+    return result
 
-# --- Example Usage for direct script run (testing the async orchestration) ---
+
+# --- Example Usage for direct script run ---
 if __name__ == "__main__":
-    if not initialize_all_module_resources():
-        print("Exiting due to resource initialization failure.")
-        exit()
+    
+    initialize_all_module_resources()
     
     test_inputs = [
-        """This is a test article. "A shocking new study claims that the sky is actually green," said Dr. Obvious. Many people are talking about it. Some experts agree this is groundbreaking. Check out more at fakerynews.com""",
-        "https://www.reuters.com/technology/google-says-generative-ai-search-brings-new-queries-more-usage-2023-05-10/"
+        "https://www.reuters.com/business/finance/jpmorgan-ceo-jamie-dimon-tells-fox-business-us-debt-could-cause-bond-turmoil-2025-06-02/"
     ]
 
     for user_input in test_inputs:
-        # To run the async function from this synchronous __main__ block:
-        results = asyncio.run(analyze_article(user_input))
+        results = analyze_article_wrapper(user_input) # Use the sync wrapper for __main__
+        print("\n--- Output for input:", user_input[:60], "...")
+        print(json.dumps(results.get("final_user_explanation", "No explanation."), indent=2))
+        # To see full data: print(json.dumps(results, indent=2))
         print("\n" + "#" * 70 + "\n")

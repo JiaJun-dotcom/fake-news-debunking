@@ -4,7 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from pymongo import MongoClient
-from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
+from transformers import BertTokenizer, BertForSequenceClassification
 import torch
 from torch.nn.functional import softmax
 from vertexai.language_models import TextEmbeddingModel
@@ -21,7 +21,7 @@ LOCATION = os.environ.get("LOCATION")
 DATABASE_NAME = os.environ.get("DATABASE_NAME")
 COLLECTION_NAME = os.environ.get("COLLECTION_NAME")
 EMBEDDING_MODEL_NAME = "text-embedding-005"
-FINE_TUNED_MODEL_PATH = "./fine_tuned_bertmini"
+FINE_TUNED_CLASSIFIER_PATH = "./fine_tuned_bertmini"
 VECTOR_SEARCH_INDEX_NAME = "vector_index"
 
 MONGO_CLIENT = None
@@ -64,7 +64,7 @@ def initialize_classifier_resources():
     else:
         try:
             CLASSIFIER_MODEL = BertForSequenceClassification.from_pretrained(FINE_TUNED_CLASSIFIER_PATH)
-            CLASSIFIER_TOKENIZER = AutoTokenizer.from_pretrained(FINE_TUNED_CLASSIFIER_PATH)
+            CLASSIFIER_TOKENIZER = BertTokenizer.from_pretrained(FINE_TUNED_CLASSIFIER_PATH)
             CLASSIFIER_MODEL.eval()
             print(f"Fine-tuned classifier loaded from: {FINE_TUNED_CLASSIFIER_PATH}")
             classifier_ok = True

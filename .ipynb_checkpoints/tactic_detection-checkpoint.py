@@ -19,9 +19,17 @@ OTHER_CHARGED_PHRASES = {}
 LEXICON_FILE_PATH = "./data/lexicons.json"
 
 # --- Initialization Function for API Clients & Lexicons ---
+import json
+# Assuming LANGUAGE_CLIENT, LOADED_LANGUAGE_TERMS, etc. are global as per your code
+# Assuming language_v1 is imported and LEXICON_FILE_PATH is defined
+
+# --- Initialization Function for API Clients & Lexicons ---
 def initialize_tactic_resources():
     global LANGUAGE_CLIENT
     global LOADED_LANGUAGE_TERMS, CONSPIRACY_MARKERS, VAGUE_SOURCES_TERMS, SENSATIONAL_PUNCTUATION_PATTERNS, OTHER_CHARGED_PHRASES
+
+    lexicons_successfully_loaded = False  # Flag for lexicon loading
+    google_client_initialized = False   # Flag for Google client initialization
 
     # Load Lexicons
     try:
@@ -33,17 +41,33 @@ def initialize_tactic_resources():
         SENSATIONAL_PUNCTUATION_PATTERNS = data.get("sensational_punctuation_patterns", {})
         OTHER_CHARGED_PHRASES = data.get("other_charged_phrases", {})
         print(f"Lexicons loaded successfully from {LEXICON_FILE_PATH}.")
+        lexicons_successfully_loaded = True
     except FileNotFoundError:
         print(f"ERROR: Lexicon JSON file not found: {LEXICON_FILE_PATH}. Some tactic detection will be limited.")
+        # Decide if this is a critical failure. If so, return False early or keep flag as False.
+        # For now, we'll let it proceed to try and init the Google client.
     except json.JSONDecodeError:
         print(f"ERROR: Could not decode JSON from {LEXICON_FILE_PATH}. Some tactic detection will be limited.")
+        # Decide if this is a critical failure.
 
     # Initialize Google Natural Language API Client
     try:
-        LANGUAGE_CLIENT = language_v1.LanguageServiceClient()
+        LANGUAGE_CLIENT = language_v1.LanguageServiceClient() # Make sure language_v1 is defined/imported
         print("Google Natural Language API client initialized successfully.")
+        google_client_initialized = True
     except Exception as e:
         print(f"ERROR: Failed to initialize Google Natural Language API client: {e}")
+        # This is likely a critical failure for this module's purpose
+
+    # Determine overall success
+    if lexicons_successfully_loaded and google_client_initialized:
+        return True
+    else:
+        if not lexicons_successfully_loaded:
+            print("Tactic resources: Lexicon loading failed or incomplete.")
+        if not google_client_initialized:
+            print("Tactic resources: Google NLP client initialization failed.")
+        return False 
 
 # --- Helper Function for Google NLP API (Sentiment, Entities, Syntax) ---
 def analyze_text_with_google_nlp_full(text_content):

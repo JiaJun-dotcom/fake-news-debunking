@@ -4,7 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from pymongo import MongoClient
-from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
+from transformers import BertTokenizer, BertForSequenceClassification
 import torch
 from torch.nn.functional import softmax
 from vertexai.language_models import TextEmbeddingModel
@@ -21,7 +21,7 @@ LOCATION = os.environ.get("LOCATION")
 DATABASE_NAME = os.environ.get("DATABASE_NAME")
 COLLECTION_NAME = os.environ.get("COLLECTION_NAME")
 EMBEDDING_MODEL_NAME = "text-embedding-005"
-FINE_TUNED_MODEL_PATH = "./fine_tuned_bertmini"
+FINE_TUNED_CLASSIFIER_PATH = "./fine_tuned_bertmini"
 VECTOR_SEARCH_INDEX_NAME = "vector_index"
 
 MONGO_CLIENT = None
@@ -34,13 +34,11 @@ RESOURCES_INITIALIZED = False
 def initialize_classifier_resources():
     global MONGO_CLIENT, NEWS_COLLECTION, CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER, VERTEX_EMBEDDING_MODEL, RESOURCES_INITIALIZED
     
-    # Prevent re-initialization if already successful
     if RESOURCES_INITIALIZED:
         print("Resources already initialized successfully.")
         return True
 
     print("--- Initializing Classifier & Vector Search Resources ---")
-    # Assume failure until success for each component
     mongo_ok = False
     classifier_ok = False
     vertex_embed_ok = False
@@ -58,22 +56,22 @@ def initialize_classifier_resources():
             mongo_ok = True
         except Exception as e:
             print(f"ERROR: Could not connect to MongoDB: {e}")
-            NEWS_COLLECTION = None # Ensure it's None on failure
+            NEWS_COLLECTION = None 
 
-    # # Fine-tuned Classifier Initialization
-    # if not FINE_TUNED_CLASSIFIER_PATH or not os.path.exists(FINE_TUNED_CLASSIFIER_PATH):
-    #     print(f"ERROR: Fine-tuned classifier model path not found or not set: {FINE_TUNED_CLASSIFIER_PATH}")
-    # else:
-    #     try:
-    #         CLASSIFIER_MODEL = BertForSequenceClassification.from_pretrained(FINE_TUNED_CLASSIFIER_PATH)
-    #         CLASSIFIER_TOKENIZER = AutoTokenizer.from_pretrained(FINE_TUNED_CLASSIFIER_PATH)
-    #         CLASSIFIER_MODEL.eval()
-    #         print(f"Fine-tuned classifier loaded from: {FINE_TUNED_CLASSIFIER_PATH}")
-    #         classifier_ok = True
-    #     except Exception as e:
-    #         print(f"ERROR: Could not load fine-tuned classifier model: {e}")
-    #         CLASSIFIER_MODEL = None # Ensure it's None on failure
-    #         CLASSIFIER_TOKENIZER = None
+    # Fine-tuned Classifier Initialization
+    if not FINE_TUNED_CLASSIFIER_PATH or not os.path.exists(FINE_TUNED_CLASSIFIER_PATH):
+        print(f"ERROR: Fine-tuned classifier model path not found or not set: {FINE_TUNED_CLASSIFIER_PATH}")
+    else:
+        try:
+            CLASSIFIER_MODEL = BertForSequenceClassification.from_pretrained(FINE_TUNED_CLASSIFIER_PATH)
+            CLASSIFIER_TOKENIZER = BertTokenizer.from_pretrained(FINE_TUNED_CLASSIFIER_PATH)
+            CLASSIFIER_MODEL.eval()
+            print(f"Fine-tuned classifier loaded from: {FINE_TUNED_CLASSIFIER_PATH}")
+            classifier_ok = True
+        except Exception as e:
+            print(f"ERROR: Could not load fine-tuned classifier model: {e}")
+            CLASSIFIER_MODEL = None 
+            CLASSIFIER_TOKENIZER = None
 
     # Vertex AI Embedding Model Initialization
     if PROJECT_ID is None or LOCATION is None:
@@ -91,23 +89,21 @@ def initialize_classifier_resources():
             VERTEX_EMBEDDING_MODEL = None # Ensure it's None on failure
 
     # Determine overall initialization success
-    # For vector search to work, both MongoDB and Vertex Embedding Model are critical.
-    # Classifier is separate.
-    if mongo_ok and vertex_embed_ok: # Check critical parts for vector search
-        RESOURCES_INITIALIZED = True # Set this flag based on critical components
+    if mongo_ok and vertex_embed_ok: 
+        RESOURCES_INITIALIZED = True 
         print("--- Core Resources for Vector Search (MongoDB & Vertex Embeddings) Initialized Successfully ---")
-        # if classifier_ok:
-        #     print("--- Classifier also initialized successfully ---")
-        # else:
-        #     print("--- WARNING: Classifier FAILED to initialize. Classification will not work. ---")
+        if classifier_ok:
+            print("--- Classifier also initialized successfully ---")
+        else:
+            print("--- WARNING: Classifier FAILED to initialize. Classification will not work. ---")
     else:
         RESOURCES_INITIALIZED = False
         print("--- CRITICAL WARNING: MongoDB or Vertex Embedding Model FAILED to initialize. Vector search will not work. ---")
-        # if not classifier_ok:
-        #      print("--- WARNING: Classifier ALSO FAILED to initialize. ---")
+        if not classifier_ok:
+             print("--- WARNING: Classifier ALSO FAILED to initialize. ---")
 
 
-    return RESOURCES_INITIALIZED # Return the overall status
+    return RESOURCES_INITIALIZED
 
 
 # --- 2. Inference with Fine-tuned BERT ---
@@ -165,7 +161,7 @@ def find_similar_articles_vector_search(query_title, query_text, num_results=5):
                 "index": "vector_index",
                 "path": "text_embedding",
                 "queryVector": query_vector,
-                "numCandidates": 10, # Adjust as needed
+                "numCandidates": 50, 
                 "limit": num_results
             }
         },
@@ -181,7 +177,6 @@ def find_similar_articles_vector_search(query_title, query_text, num_results=5):
     ]
     try:
         similar_docs = list(NEWS_COLLECTION.aggregate(pipeline))
-        print(f"  Found {len(similar_docs)} similar articles via vector search.")
         return similar_docs
     except Exception as e:
         print(f"  Error during vector search: {e}")
