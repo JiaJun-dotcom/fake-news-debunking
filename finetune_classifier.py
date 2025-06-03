@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import AdamW
-from transformers import MobileBertTokenizer, MobileBertForSequenceClassification, get_linear_schedule_with_warmup
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, get_linear_schedule_with_warmup
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 from tqdm.auto import tqdm # For progress bars
@@ -16,8 +16,8 @@ CSV_FILE_PATH_WELFAKE = "./data/WELFake_Dataset.csv"
 CSV_FILE_PATH_NEW_FAKE = "./data/Fake.csv"
 CSV_FILE_PATH_NEW_REAL = "./data/True.csv"
                
-MODEL_NAME = "google/mobilebert-uncased"
-OUTPUT_MODEL_DIR = "./fine_tuned_mobilebert" # Directory to save the fine-tuned model
+MODEL_NAME = "jy46604790/Fake-News-Bert-Detect"
+OUTPUT_MODEL_DIR = "./fine_tuned_fake_news_bert" # Directory to save the fine-tuned model
 
 WELFAKE_TEXT_COLUMN = "text"                  
 WELFAKE_TITLE_COLUMN = "title"                
@@ -185,7 +185,7 @@ if not df_ood_test.empty:
 
 # --- 3. Tokenization ---
 print(f"Loading tokenizer: {MODEL_NAME}...")
-tokenizer = MobileBertTokenizer.from_pretrained(MODEL_NAME)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
 print("Tokenizing training data...")
 train_encodings = tokenizer(train_texts, truncation=True, padding=True, max_length=MAX_LENGTH, return_tensors="pt")
@@ -215,7 +215,8 @@ val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
 
 # --- 6. Load Pre-trained Model ---
 print(f"Loading pre-trained model: {MODEL_NAME}...")
-model = MobileBertForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=2) # 2 labels: fake (0), real (1)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, 
+                                                           num_labels=2) # 2 labels: fake (0), real (1)
 model.to(device) # Move model to GPU if available
 
 # --- 7. Optimizer and Scheduler ---
@@ -293,7 +294,7 @@ print("Model and tokenizer saved successfully.")
 print(f"""
 --- Next Steps ---
 You can now load this fine-tuned model for inference using:
-from transformers import MobileBertTokenizer, MobileBertForSequenceClassification
-model = MobileBertForSequenceClassification.from_pretrained("{OUTPUT_MODEL_DIR}")
-tokenizer = MobileBertTokenizer.from_pretrained("{OUTPUT_MODEL_DIR}")
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+model = AutoModelForSequenceClassification.from_pretrained("{OUTPUT_MODEL_DIR}")
+tokenizer = AutoTokenizer.from_pretrained("{OUTPUT_MODEL_DIR}")
 """)

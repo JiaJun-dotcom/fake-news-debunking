@@ -112,16 +112,30 @@ def generate_final_explanation(analysis_data):
       
     # Vector search for similar articles
     if analysis_data.get('similar_articles_from_db'):
-        sim_arts = analysis_data['similar_articles_from_db']
+        sim_summary = analysis_data['similar_articles_from_db']
         user_prompt_content += "4. Semantic Similarity to Our Database:\n"
-        if sim_arts:
-            for art in sim_arts[:2]:
-                lbl = "Unknown"
-                if art.get('label') == 0: lbl = "FAKE"
-                elif art.get('label') == 1: lbl = "REAL"
-                user_prompt_content += f"  - Similar to: \"{art.get('title', 'N/A')}\" ({lbl}, Score: {art.get('similarity_score', 0):.2f})\n"
-        else: 
-            user_prompt_content += "  - No highly similar articles found.\n"
+        
+        fake_count = sim_summary.get("count_fake", 0)
+        real_count = sim_summary.get("count_real", 0)
+        
+        if fake_count > 0 and real_count > 0:
+            fake_scores_str = ", ".join(sim_summary.get("fake_scores", []))
+            real_scores_str = ", ".join(sim_summary.get("real_scores", []))
+            user_prompt_content += f"  - This article is semantically similar to **{fake_count} known FAKE article(s)** (scores: [{fake_scores_str}]) and **{real_count} known REAL article(s)** (scores: [{real_scores_str}]) in our database.\n"
+        elif fake_count > 0:
+            fake_scores_str = ", ".join(sim_summary.get("fake_scores", []))
+            user_prompt_content += f"  - This article is semantically similar to **{fake_count} known FAKE article(s)** in our database (scores: [{fake_scores_str}]).\n"
+        elif real_count > 0:
+            real_scores_str = ", ".join(sim_summary.get("real_scores", []))
+            user_prompt_content += f"  - This article is semantically similar to **{real_count} known REAL article(s)** in our database (scores: [{real_scores_str}]).\n"
+        else:
+            raw_similar = analysis_data.get("similar_articles_from_db")
+            if isinstance(raw_similar, list) and len(raw_similar) > 0:
+                 user_prompt_content += "  - Some similar articles were found, but their fake/real status was not definitively matched to known labels in the top results, or no strong similarities were found.\n"
+            else:
+                 user_prompt_content += "  - No highly similar articles with known fake/real labels were found.\n"
+    else:
+        user_prompt_content += "4. Semantic Similarity to Our Database: Not Run or No Results.\n"
     
     # Google Fact Check API for claim fact-checking.
     if analysis_data.get('fact_check_api_results'):
@@ -138,11 +152,12 @@ def generate_final_explanation(analysis_data):
             user_prompt_content += "  - No relevant fact-checks found or claims not suitable.\n"
 
     user_prompt_content += "\n--- END OF ASSESSMENT DATA ---\n\n"
-    user_prompt_content += "Based ONLY on the provided assessment data above, please generate your summary. Follow these instructions for your output:\n"
-    user_prompt_content += "1. Start with an overall assessment of the article's likely trustworthiness (e.g., 'appears highly unreliable', 'shows mixed signals', 'appears generally credible but with caveats').\n"
-    user_prompt_content += "2. Briefly explain the key reasons for this assessment, referencing specific findings from the data (e.g., classifier prediction, tactics, similarity, fact-checks).\n"
-    user_prompt_content += "3. Offer 1-2 actionable pieces of advice or things the user should look out for or consider when reading this article or similar content.\n"
-    user_prompt_content += "4. Keep the language clear, objective, and avoid making definitive statements of truth/falsity not directly supported by the provided data (especially the classifier's prediction which is probabilistic)."
+    user_prompt_content += "Task: Based ONLY on the provided assessment data above, generate a concise summary for a user. Your response should be structured as follows:\n"
+    user_prompt_content += "1. **Overall Trustworthiness Assessment:** (e.g., 'This article appears highly unreliable due to multiple red flags.', 'This article shows some concerning signals and should be approached with caution.', 'This article appears generally credible, but consider these points.').\n"
+    user_prompt_content += "2. **Key Reasons:** Briefly explain the main reasons for your assessment, referencing specific findings from the data (e.g., 'The content was classified as FAKE with high confidence and exhibits several disinformation tactics such as [tactic1, tactic2].', 'While classified as REAL, it shares similarity with some known FAKE articles and uses loaded language.', 'The article is similar to several known FAKE articles and uses vague sourcing.').\n"
+    user_prompt_content += "3. **Actionable Advice/Things to Look Out For:** Offer 1-2 concrete pieces of advice for the user (e.g., 'Verify these claims with trusted news sources.', 'Be aware of the emotional language used, which might aim to persuade rather than inform.', 'Cross-reference information about [specific entity/claim mentioned].').\n"
+    user_prompt_content += "Keep the language clear, objective, and avoid making definitive statements of truth/falsity not directly supported by the provided data (especially the classifier's prediction which is probabilistic). Focus on guiding the user to think critically."
+    user_prompt_content += "\n\nUser-Facing Explanation:"
 
     print("\n--- Sending Prompt to Llama.cpp Model (Chat Completion) ---")
 

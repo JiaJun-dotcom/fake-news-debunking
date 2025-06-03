@@ -1,5 +1,6 @@
 TASKS:
 1. Work on classifier, try to make it as accurate as possible, train with diff models on new combined dataset
+(BertMINI, fine-tuned DistilBERT for fake-news context)
 ** 2. Test genai.py in the end ** (made asynchronous, all setup done run and check for bugs, but do at the end)
 3. Test fastapi server with curl/Postman/Swagger
 

@@ -98,17 +98,20 @@ async def analyze_article_endpoint(item: ArticleInput):
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
         
 # --- How to Run This Server ---
-# 1. Save this file as 'main.py'.
-# 2. Make sure 'genai.py' (your comprehensive script) and all its dependencies
-#    (lexicons.json, model directories) are in the correct places.
-# 3. Ensure all Python packages are installed (fastapi, uvicorn, requests, transformers, etc.).
-# 4. Run from your terminal in the directory containing 'main.py':
-#    uvicorn main:app --reload
+# Run from terminal in the directory containing 'main.py':
+#    uvicorn main:app --reload --port 8000
 #    - 'main': the name of your Python file (main.py).
 #    - 'app': the FastAPI instance variable you created (app = FastAPI()).
 #    - '--reload': enables auto-reloading when you save changes to the code (for development).
-# 5. Access the API:
-#    - Documentation: Open your browser to http://127.0.0.1:8000/docs (Swagger UI)
-#                     or http://127.0.0.1:8000/redoc (ReDoc)
+
+# Access the API:
 #    - Send POST requests to: http://127.0.0.1:8000/analyze_article/
-#      with a JSON body like: {"content": "Your news article text or URL here"}
+#      eg:
+#      curl -X POST "http://localhost:8000/analyze_article/" \
+#      -H "Content-Type: application/json" \
+#      -d '{"content": "This is a sample news article text. Scientists today announced a shocking discovery that cats can indeed fly, but only on Tuesdays. This has been confirmed by multiple unnamed sources and experts agree it is a game changer."}'
+# or if want to POST url:
+# Replace with: -d '{"content": "https://www.reuters.com/world/europe/shelling-hits-east-ukrainian-city-hours-after-ceasefire-deal-2023-01-06/"}'
+
+# For Video demo, use FastAPI's Automatic Docs (Swagger UI / ReDoc):
+# How: Just open http://localhost:8000/docs in your web browser.

@@ -103,7 +103,7 @@ async def analyze_article_endpoint(item: ArticleInput):
 #    (lexicons.json, model directories) are in the correct places.
 # 3. Ensure all Python packages are installed (fastapi, uvicorn, requests, transformers, etc.).
 # 4. Run from your terminal in the directory containing 'main.py':
-#    uvicorn main:app --reload
+#    uvicorn main:app --reload --port 8000
 #    - 'main': the name of your Python file (main.py).
 #    - 'app': the FastAPI instance variable you created (app = FastAPI()).
 #    - '--reload': enables auto-reloading when you save changes to the code (for development).
