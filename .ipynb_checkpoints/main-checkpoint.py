@@ -78,37 +78,41 @@ async def analyze_article_endpoint(item: ArticleInput):
     print(f"Received analysis request for content (first 100 chars): {item.content[:100]}...")
 
     try:
-        analysis_results = await run_in_threadpool(genai.analyze_article_wrapper, item.content)
-        # Ensures it can process multiple requests concurrently using FastAPI's run_in_threadpool function
-        # But it expects blocking synchronous code, so have to wrap the async processing of the functions(components)
-        # in a synchronous callable argument.
+        result_string = await run_in_threadpool(genai.analyze_article_wrapper, item.content)
         
-        if analysis_results.get("error"):
-            print(f"Analysis function returned an error: {analysis_results.get('error')}")
-            raise HTTPException(status_code=500, detail=analysis_results.get("final_user_explanation", "Analysis failed internally."))
-            
-        return {
-            "final_user_explanation": analysis_results.get("final_user_explanation", "No explanation generated."),
-            "full_analysis_data": analysis_results 
-        }
-    except HTTPException as e:
-        raise e
+        if isinstance(result_string, str) and result_string.startswith("Error:"):
+            print(f"Analysis wrapper returned an error: {result_string}")
+            error_detail = result_string 
+            raise HTTPException(status_code=500, detail=error_detail)
+        
+        if isinstance(result_string, str):
+            return result_string 
+        else:
+            print(f"UNEXPECTED type from analyze_article_wrapper: {type(result_string)}")
+            raise HTTPException(status_code=500, detail="Analysis failed: Unexpected internal response format.")
+
     except Exception as e:
-        print(f"UNEXPECTED ERROR during analysis: {e}") 
-        raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {str(e)}")
+        print(f"UNEXPECTED ERROR in analyze_article_endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected server error occurred.")
         
 # --- How to Run This Server ---
-# 1. Save this file as 'main.py'.
-# 2. Make sure 'genai.py' (your comprehensive script) and all its dependencies
-#    (lexicons.json, model directories) are in the correct places.
-# 3. Ensure all Python packages are installed (fastapi, uvicorn, requests, transformers, etc.).
-# 4. Run from your terminal in the directory containing 'main.py':
+# Run from terminal in the directory containing 'main.py':
 #    uvicorn main:app --reload --port 8000
 #    - 'main': the name of your Python file (main.py).
 #    - 'app': the FastAPI instance variable you created (app = FastAPI()).
 #    - '--reload': enables auto-reloading when you save changes to the code (for development).
-# 5. Access the API:
-#    - Documentation: Open your browser to http://127.0.0.1:8000/docs (Swagger UI)
-#                     or http://127.0.0.1:8000/redoc (ReDoc)
+
+# Access the API:
 #    - Send POST requests to: http://127.0.0.1:8000/analyze_article/
-#      with a JSON body like: {"content": "Your news article text or URL here"}
+#      eg:
+#      curl -X POST "http://localhost:8000/analyze_article/" \
+#      -H "Content-Type: application/json" \
+#      -d '{"content": "This is a sample news article text. Scientists today announced a shocking discovery that cats can indeed fly, but only on Tuesdays. This has been confirmed by multiple unnamed sources and experts agree it is a game changer."}'
+# or if want to POST url:
+# Replace with: -d '{"content": "https://www.reuters.com/world/europe/shelling-hits-east-ukrainian-city-hours-after-ceasefire-deal-2023-01-06/"}'
+
+# For Video demo, use FastAPI's Automatic Docs (Swagger UI / ReDoc):
+# How: Just open http://localhost:8000/docs in your web browser.
+# curl -X POST "http://localhost:8000/analyze_article/" \
+#       -H "Content-Type: application/json" \
+#       -d '{"content": "This is a sample news article text. Scientists today announced a shocking discovery that cats can indeed fly, but only on Tuesdays. This has been confirmed by multiple unnamed sources and experts agree it is a game changer."}'

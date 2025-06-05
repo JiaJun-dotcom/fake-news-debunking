@@ -88,7 +88,7 @@ def analyze_text_with_google_nlp_full(text_content):
 
 
 # --- Main Tactic Detection Function ---
-def detect_disinformation_tactics(title, text):
+def detect_disinformation_tactics(title, text, article_url=None):
     """
     Detects various disinformation tactics in a news article.
     Relies on globally initialized LANGUAGE_CLIENT and VADER_ANALYZER.

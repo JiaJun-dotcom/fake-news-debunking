@@ -6,7 +6,6 @@ import time
 import re
 from dotenv import load_dotenv
 from llama_cpp import Llama
-# import vertexai # Not directly used here if Llama.cpp is the GenAI
 import torch
 import asyncio
 
@@ -15,12 +14,12 @@ try:
                                 detect_disinformation_tactics
     from search_and_classifier import initialize_classifier_resources, \
                                 classify_article_text, find_similar_articles_vector_search, \
-                                MONGO_CLIENT as NC_MONGO_CLIENT # Expose MONGO_CLIENT for closing
+                                MONGO_CLIENT as NC_MONGO_CLIENT 
     from news_extraction import fetch_and_extract_article_data_from_url
     from factcheck import initialize_fact_checker_resources, \
                              extract_key_claims_with_t5, run_fact_check_on_extracted_claims
     from sentiment_analysis import initialize_sentiment_analyzers, get_article_sentiment, \
-                                   VADER_ANALYZER # Expose VADER if needed by other modules directly
+                                   VADER_ANALYZER 
 except ImportError as e:
     print(f"ERROR: Could not import from module files. Details: {e}")
     print("Ensure tactic_detector.py, news_classifier.py, news_extraction.py, fact_checker.py, sentiment_analyzer.py exist and are correctly structured.")
@@ -30,8 +29,6 @@ except ImportError as e:
 load_dotenv()
 
 # --- Configuration ---
-# GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID") # Not needed if only Llama.cpp for GenAI
-# GCP_LOCATION = os.environ.get("GCP_LOCATION")   # Not needed if only Llama.cpp for GenAI
 
 # --- Global Client for GenAI (Llama.cpp) ---
 LLAMA_CPP_MODEL = None
@@ -44,7 +41,6 @@ ALL_RESOURCES_INITIALIZED = False
 def initialize_all_module_resources():
     global ALL_RESOURCES_INITIALIZED, LLAMA_CPP_MODEL
     if ALL_RESOURCES_INITIALIZED:
-        # print("All resources already initialized.") # Can be noisy
         return True
 
     print("--- Initializing All Application Resources ---")
@@ -93,8 +89,6 @@ def initialize_all_module_resources():
 
 # --- Generative AI Summarization ---
 def generate_final_explanation(analysis_data):
-    # (This function remains the same as your last correct version,
-    #  it already expects 'similar_articles_summary' in analysis_data)
     if not LLAMA_CPP_MODEL:
         error_msg = "Llama.cpp (GGUF) model not initialized. Cannot generate explanation."
         print(f"ERROR: {error_msg}")
@@ -195,7 +189,7 @@ def generate_final_explanation(analysis_data):
         user_prompt_content += "5. Google Fact Check API Results: Not Run or No Claims.\n"
 
     user_prompt_content += "\n--- END OF ASSESSMENT DATA ---\n\n"
-    user_prompt_content += "Task: Based ONLY on the provided assessment data above, generate a concise summary for a general user..." # Your full task instructions
+    user_prompt_content += "Task: Based ONLY on the provided assessment data above, generate a concise summary for a general user..."
     user_prompt_content += "\n\nUser-Facing Explanation:"
 
     try:
@@ -204,16 +198,33 @@ def generate_final_explanation(analysis_data):
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_prompt_content}
             ],
-            max_tokens=700, temperature=0.25, top_p=0.9,
+            max_tokens=2048, temperature=0.25, top_p=0.9,
         )
         explanation = response["choices"][0]["message"]["content"].strip()
-        return explanation
+        
+        # --- Parsing Logic for output returned ---
+        think_delimiter = "</think>"
+        final_explanation_text = explanation
+        if think_delimiter in explanation:
+            parts = explanation.split(think_delimiter, 1)
+            if len(parts) > 1:
+                # Get the part after the delimiter, then strip leading newlines
+                final_explanation_text = parts[1].lstrip('\n ').strip()
+            else: # If delimiter is present but split somehow fails to produce 2 parts (edge case)
+                final_explanation_text = explanation # Fallback to full text
+        
+        if final_explanation_text.startswith("User-Facing Explanation:"):
+            final_explanation_text = final_explanation_text[len("User-Facing Explanation:"):].lstrip()
+
+        return final_explanation_text
+        # --- End of new parsing logic ---
+
     except Exception as e:
         print(f"Error calling Llama.cpp Model create_chat_completion: {e}")
         return f"Error generating final explanation using Llama.cpp. (Details: {e})"
 
 
-# --- Main Orchestration Function (Async Internals) ---
+# --- Main Orchestration Function ---
 async def analyze_article(user_input_url_or_text): 
     if not ALL_RESOURCES_INITIALIZED:
          return {"error": "Critical resources not initialized.",
@@ -241,7 +252,6 @@ async def analyze_article(user_input_url_or_text):
             return {"error": "Could not scrape significant text from URL.",
                     "final_user_explanation": "Could not process the URL to get article content."}
     else:
-        # print("Input is direct text.") # Can be noisy
         article_text = user_input_url_or_text
         first_line = article_text.split('\n', 1)[0]
         if len(first_line) < 120 and len(first_line.split()) < 20: article_title = first_line
@@ -255,7 +265,7 @@ async def analyze_article(user_input_url_or_text):
     task_classify = asyncio.to_thread(classify_article_text, article_title, article_text)
     task_vector_search_raw = asyncio.to_thread(find_similar_articles_vector_search, article_title, article_text, 5)
     task_tactic_detect = asyncio.to_thread(detect_disinformation_tactics, article_title, article_text, source_url_for_analysis)
-    task_sentiment = asyncio.to_thread(get_article_sentiment, article_text, "vader")
+    task_sentiment = asyncio.to_thread(get_article_sentiment, article_text)
 
     async def run_fact_checking_pipeline_async():
         claims = await asyncio.to_thread(extract_key_claims_with_t5, article_text, article_title, article_description, 2)
@@ -295,7 +305,6 @@ async def analyze_article(user_input_url_or_text):
                 processed_similar_articles_summary["real_scores"].append(f"{score:.3f}")
     elif isinstance(similar_articles_raw_output, dict) and "error" in similar_articles_raw_output:
         processed_similar_articles_summary["error"] = similar_articles_raw_output["error"]
-    # *** END OF PROCESSING similar_articles_raw_output ***
 
     analysis_data_for_genai = {
         "user_input_source": user_input_url_or_text,
@@ -312,6 +321,9 @@ async def analyze_article(user_input_url_or_text):
     print("\n[Generating Final Explanation with GenAI]") 
     final_explanation = await asyncio.to_thread(generate_final_explanation, analysis_data_for_genai)
     analysis_data_for_genai["final_user_explanation"] = final_explanation
+    
+    if isinstance(final_explanation, str) and final_explanation.startswith("Error:"):
+        analysis_data_for_genai["error"] = "GenAI explanation generation failed."
         
     return analysis_data_for_genai
 
@@ -322,14 +334,36 @@ def analyze_article_wrapper(user_input_url_or_text):
         if loop.is_closed(): 
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-    except RuntimeError: # No current event loop in this thread
+    except RuntimeError: 
         print("No current event loop, creating a new one.")
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     
-    result = loop.run_until_complete(analyze_article(user_input_url_or_text))
-    # print(f"Sync wrapper finished for: {user_input_url_or_text[:50]}")
-    return result
+    try:
+        # analyze_article is expected to return a dictionary.
+        result_dict = loop.run_until_complete(analyze_article(user_input_url_or_text))
+    except Exception as e:
+        # Catch exceptions from analyze_article or loop.run_until_complete
+        print(f"CRITICAL EXCEPTION in analyze_article_wrapper during async call: {e}")
+        # import traceback # For debugging
+        # print(traceback.format_exc())
+        return f"Error: An unexpected critical exception occurred during analysis processing: {str(e)}"
+
+    if isinstance(result_dict, dict):
+        if result_dict.get("error"):
+            error_message = result_dict.get("final_user_explanation", str(result_dict.get("error")))
+            return f"Error: {error_message}"
+
+        final_explanation = result_dict.get("final_user_explanation")
+        if isinstance(final_explanation, str):
+            if final_explanation.startswith("Error:"): 
+                return final_explanation 
+            else: 
+                return final_explanation
+        else:
+            return "Error: Analysis completed, but the final explanation is missing or in an unexpected format."
+    else:
+        return "Error: Core analysis function returned an unexpected data type."
 
 
 # --- Example Usage for direct script run ---
@@ -345,5 +379,4 @@ if __name__ == "__main__":
         results = analyze_article_wrapper(user_input) # Use the sync wrapper for __main__
         print("\n--- Output for input:", user_input[:60], "...")
         print(json.dumps(results.get("final_user_explanation", "No explanation."), indent=2))
-        # To see full data: print(json.dumps(results, indent=2))
         print("\n" + "#" * 70 + "\n")
