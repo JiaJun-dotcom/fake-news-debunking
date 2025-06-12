@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fake News Debunker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Fake News Debunker</h1>
+        <form id="analyze-form">
+            <label for="content-input">Article URL or Text:</label>
+            <textarea id="content-input" name="content" rows="6" placeholder="Enter article URL or paste text here..."></textarea>
+            <button type="submit">Analyze</button>
+        </form>
+        <div id="result-container">
+            <h2>Analysis Result</h2>
+            <pre id="result-output"></pre>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
