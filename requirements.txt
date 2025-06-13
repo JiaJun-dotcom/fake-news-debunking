@@ -1,7 +1,6 @@
 pandas
 numpy
 pymongo
-vertexai
 google-cloud-language
 google-cloud-aiplatform
 tqdm
@@ -20,7 +19,7 @@ requests
 fastapi
 pydantic
 extraction
-asyncio
 selenium 
 webdriver-manager
 uvicorn
+sentence-transformers

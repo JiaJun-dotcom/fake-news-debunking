@@ -7,8 +7,7 @@ from pymongo import MongoClient
 from transformers import BertTokenizer, BertForSequenceClassification
 import torch
 from torch.nn.functional import softmax
-from vertexai.language_models import TextEmbeddingModel
-import vertexai
+from sentence_transformers import SentenceTransformer
 
 load_dotenv()
 
@@ -16,23 +15,23 @@ load_dotenv()
 
 # --- Configuration ---
 MONGO_URI = os.environ.get("MONGO_URI")
-PROJECT_ID = os.environ.get("PROJECT_ID")
-LOCATION = os.environ.get("LOCATION")
+# PROJECT_ID = os.environ.get("PROJECT_ID")
+# LOCATION = os.environ.get("LOCATION")
 DATABASE_NAME = os.environ.get("DATABASE_NAME")
 COLLECTION_NAME = os.environ.get("COLLECTION_NAME")
-EMBEDDING_MODEL_NAME = "text-embedding-005"
+EMBEDDING_MODEL_NAME = "all-mpnet-base-v2"
 FINE_TUNED_CLASSIFIER_PATH = "./fine_tuned_bertmini"
 VECTOR_SEARCH_INDEX_NAME = "vector_index"
 
 MONGO_CLIENT = None
 CLASSIFIER_MODEL = None
 CLASSIFIER_TOKENIZER = None
-VERTEX_EMBEDDING_MODEL = None
+EMBEDDING_MODEL = None
 NEWS_COLLECTION = None
 RESOURCES_INITIALIZED = False
 
 def initialize_classifier_resources():
-    global MONGO_CLIENT, NEWS_COLLECTION, CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER, VERTEX_EMBEDDING_MODEL, RESOURCES_INITIALIZED
+    global MONGO_CLIENT, NEWS_COLLECTION, CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER, EMBEDDING_MODEL, RESOURCES_INITIALIZED
     
     if RESOURCES_INITIALIZED:
         print("Resources already initialized successfully.")
@@ -41,7 +40,7 @@ def initialize_classifier_resources():
     print("--- Initializing Classifier & Vector Search Resources ---")
     mongo_ok = False
     classifier_ok = False
-    vertex_embed_ok = False
+    embed_ok = False
 
     # MongoDB Initialization
     if not MONGO_URI:
@@ -73,23 +72,18 @@ def initialize_classifier_resources():
             CLASSIFIER_MODEL = None 
             CLASSIFIER_TOKENIZER = None
 
-    # Vertex AI Embedding Model Initialization
-    if PROJECT_ID is None or LOCATION is None:
-        print("WARNING: GCP_PROJECT_ID or GCP_LOCATION not set. Vertex AI Embedding model cannot initialize.")
-    else:
-        try:
-            print(f"Initializing Vertex AI with Project ID: {PROJECT_ID}, Location: {LOCATION}")
-            vertexai.init(project=PROJECT_ID, location=LOCATION)
-            print(f"Attempting to load Vertex AI Embedding model: {EMBEDDING_MODEL_NAME}")
-            VERTEX_EMBEDDING_MODEL = TextEmbeddingModel.from_pretrained(EMBEDDING_MODEL_NAME)
-            print(f"Vertex AI Embedding model ({EMBEDDING_MODEL_NAME}) loaded successfully for queries.")
-            vertex_embed_ok = True
-        except Exception as e:
-            print(f"ERROR: Could not load Vertex AI Embedding model: {e}")
-            VERTEX_EMBEDDING_MODEL = None # Ensure it's None on failure
+    # Embedding Model Initialization
+    try:
+        print(f"Attempting to load Vertex AI Embedding model: {EMBEDDING_MODEL_NAME}")
+        EMBEDDING_MODEL = SentenceTransformer(EMBEDDING_MODEL_NAME)
+        print(f"Embedding model ({EMBEDDING_MODEL_NAME}) loaded successfully for queries.")
+        embed_ok = True
+    except Exception as e:
+        print(f"ERROR: Could not load Vertex AI Embedding model: {e}")
+        EMBEDDING_MODEL = None # Ensure it's None on failure
 
     # Determine overall initialization success
-    if mongo_ok and vertex_embed_ok: 
+    if mongo_ok and embed_ok: 
         RESOURCES_INITIALIZED = True 
         print("--- Core Resources for Vector Search (MongoDB & Vertex Embeddings) Initialized Successfully ---")
         if classifier_ok:
@@ -137,7 +131,7 @@ def classify_article_text(title, text_content):
 
 # --- 3. Semantic Similarity Search (Atlas Vector Search) ---
 def find_similar_articles_vector_search(query_title, query_text, num_results=5):
-    if NEWS_COLLECTION is None or VERTEX_EMBEDDING_MODEL is None:
+    if NEWS_COLLECTION is None or EMBEDDING_MODEL is None:
         print("  MongoDB connection or Vertex Embedding model not available. Skipping vector search.")
         return []
 
@@ -149,18 +143,24 @@ def find_similar_articles_vector_search(query_title, query_text, num_results=5):
         return []
 
     try:
-        embedding_response = VERTEX_EMBEDDING_MODEL.get_embeddings([query_content_for_embedding])
-        query_vector = embedding_response[0].values
+        emb_array = EMBEDDING_MODEL.encode(
+            [query_content_for_embedding],
+            convert_to_numpy=True,
+            show_progress_bar=False
+        )
+        query_vector = emb_array[0]  # a numpy array of floats
     except Exception as e:
-        print(f"  Error generating embedding for vector search query: {e}")
+        print(f"Error generating embedding for vector search query: {e}")
         return []
+    
+    query_vector_list = query_vector.tolist()
 
     pipeline = [
         {
             "$vectorSearch": {
                 "index": "vector_index",
                 "path": "text_embedding",
-                "queryVector": query_vector,
+                "queryVector": query_vector_list,
                 "numCandidates": 50, 
                 "limit": num_results
             }

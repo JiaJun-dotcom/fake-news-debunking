@@ -1,6 +1,8 @@
 # FastAPI endpoint to deploy model
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool # To run blocking IO/CPU tasks
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import os
 import time
 from pydantic import BaseModel
@@ -10,6 +12,14 @@ app = FastAPI(
 title="Fake News Debunker API",
     description="Analyzes news articles or text input for potential misinformation, tactics, and provides an AI-generated explanation.",
     version="1.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 class ArticleInput(BaseModel):
@@ -95,6 +105,8 @@ async def analyze_article_endpoint(item: ArticleInput):
         print(f"UNEXPECTED ERROR in analyze_article_endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred.")
         
+app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+
 # --- How to Run This Server ---
 # Run from terminal in the directory containing 'main.py':
 #    uvicorn main:app --reload --port 8000

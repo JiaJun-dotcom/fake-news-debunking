@@ -23,7 +23,6 @@ def initialize_fact_checker_resources():
 
     print("--- Initializing Fact Checker Resources ---")
     fact_check_api_ok = False
-    t5_model_ok = False
 
     # Initialize Fact Check API Client
     if not FACT_CHECK_SERVICE_API: # Initialize only if not already done
@@ -54,12 +53,10 @@ def initialize_fact_checker_resources():
                 print("T5 Claim Extractor will run on CPU (slower).")
             CLAIM_EXTRACTOR_MODEL.eval()
             print("T5 Claim Extractor model initialized successfully.")
-            t5_model_ok = True
             IS_CLAIM_EXTRACTOR_READY = True # Mark T5 as ready
         except Exception as e:
             print(f"ERROR initializing T5 Claim Extractor model: {e}")
     else: 
-        t5_model_ok = True
         IS_CLAIM_EXTRACTOR_READY = True
 
 
