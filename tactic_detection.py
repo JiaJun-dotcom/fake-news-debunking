@@ -2,13 +2,10 @@ import os
 import re
 import json
 from dotenv import load_dotenv
-from google.cloud import language_v1
+import spacy
 
 # --- Load Environment Variables ---
 load_dotenv()
-
-# --- Global Clients & Lexicons ---
-LANGUAGE_CLIENT = None
 
 LOADED_LANGUAGE_TERMS = {}
 CONSPIRACY_MARKERS = []
@@ -17,6 +14,7 @@ SENSATIONAL_PUNCTUATION_PATTERNS = {}
 OTHER_CHARGED_PHRASES = {}
 
 LEXICON_FILE_PATH = "./data/lexicons.json"
+nlp = spacy.load("en_core_web_sm")
 
 # --- Initialization Function for API Clients & Lexicons ---
 import json
@@ -25,11 +23,9 @@ import json
 
 # --- Initialization Function for API Clients & Lexicons ---
 def initialize_tactic_resources():
-    global LANGUAGE_CLIENT
     global LOADED_LANGUAGE_TERMS, CONSPIRACY_MARKERS, VAGUE_SOURCES_TERMS, SENSATIONAL_PUNCTUATION_PATTERNS, OTHER_CHARGED_PHRASES
 
     lexicons_successfully_loaded = False  # Flag for lexicon loading
-    google_client_initialized = False   # Flag for Google client initialization
 
     # Load Lexicons
     try:
@@ -50,41 +46,17 @@ def initialize_tactic_resources():
         print(f"ERROR: Could not decode JSON from {LEXICON_FILE_PATH}. Some tactic detection will be limited.")
         # Decide if this is a critical failure.
 
-    # Initialize Google Natural Language API Client
-    try:
-        LANGUAGE_CLIENT = language_v1.LanguageServiceClient() # Make sure language_v1 is defined/imported
-        print("Google Natural Language API client initialized successfully.")
-        google_client_initialized = True
-    except Exception as e:
-        print(f"ERROR: Failed to initialize Google Natural Language API client: {e}")
-        # This is likely a critical failure for this module's purpose
-
     # Determine overall success
-    if lexicons_successfully_loaded and google_client_initialized:
+    if lexicons_successfully_loaded:
         return True
     else:
-        if not lexicons_successfully_loaded:
-            print("Tactic resources: Lexicon loading failed or incomplete.")
-        if not google_client_initialized:
-            print("Tactic resources: Google NLP client initialization failed.")
+        print("Tactic resources: Lexicon loading failed or incomplete.")
         return False 
 
-# --- Helper Function for Google NLP API (Sentiment, Entities, Syntax) ---
-def analyze_text_with_google_nlp_full(text_content):
-    """Analyzes text for sentiment, entities, and syntax using Google NLP API."""
-    if not LANGUAGE_CLIENT or not text_content or not isinstance(text_content, str) or len(text_content.strip()) == 0:
-        return None, None, None
-    try:
-        document = language_v1.types.Document(content=text_content, type_=language_v1.types.Document.Type.PLAIN_TEXT)
-        features = language_v1.AnnotateTextRequest.Features(
-            extract_syntax=True,
-            extract_entities=True
-        )
-        response = LANGUAGE_CLIENT.annotate_text(document=document, features=features, encoding_type=language_v1.EncodingType.UTF8)
-        return response.entities, response.sentences, response.tokens
-    except Exception as e:
-        print(f"Error in Google NLP API (annotate_text) call: {e}")
-        return None, None, None
+def analyze_text_with_spacy(text_content):
+    if not text_content or not isinstance(text_content, str) or len(text_content.strip()) == 0:
+        return None
+    return nlp(text_content)
 
 
 # --- Main Tactic Detection Function ---
@@ -96,9 +68,7 @@ def detect_disinformation_tactics(title, text, article_url=None):
     detected_tactics = set()
     if not text and not title: return []
 
-    gcp_entities, gcp_sentences, gcp_tokens = None, None, None
-    if text: # Only analyze text if it exists
-        gcp_entities, gcp_sentences, gcp_tokens = analyze_text_with_google_nlp_full(text)
+    doc = analyze_text_with_spacy(text) if text else None
 
     # --- 1. Sensationalism/Clickbait ---
     # a) Excessive Capitalization in Title
@@ -135,42 +105,11 @@ def detect_disinformation_tactics(title, text, article_url=None):
         detected_tactics.add("vague_sourcing_phrases")
 
     # b) Heuristic for Extremely Low Specific Entity Mentions
-    if gcp_entities and text:
-        specific_persons = {
-            e.name for e in gcp_entities
-            if e.type_ == language_v1.types.Entity.Type.PERSON and
-               len(e.name.split()) > 1 and e.salience > 0.015 # Slightly higher salience
-        }
-        specific_orgs = {
-            e.name for e in gcp_entities
-            if e.type_ == language_v1.types.Entity.Type.ORGANIZATION and
-               not any(vs.lower() in e.name.lower() for vs in VAGUE_SOURCES_TERMS) and
-               e.salience > 0.015
-        }
-        num_words = len(text.split())
-        if num_words > 250:
-            if len(specific_persons) == 0 and len(specific_orgs) == 0:
-                detected_tactics.add("lack_of_specific_source_entities")
-
-#     # --- 3. Appeals to Emotion over Logic ---
-#     if gcp_sentiment and text:
-#         num_words = len(text.split())
-#         # High magnitude relative to text length
-#         if gcp_sentiment.magnitude > (num_words / 100.0 * 1.8) and num_words > 70:
-#             numbers_in_text = re.findall(r'\b\d{2,}\b', text)
-#             location_entities = [e.name for e in gcp_entities if e.type_ == language_v1.types.Entity.Type.LOCATION and e.salience > 0.01] if gcp_entities else []
-#             event_entities = [e.name for e in gcp_entities if e.type_ == language_v1.types.Entity.Type.EVENT and e.salience > 0.01] if gcp_entities else []
-
-#             num_specific_actors = 0
-#             if 'specific_persons' in locals() and 'specific_orgs' in locals(): 
-#                  num_specific_actors = len(specific_persons) + len(specific_orgs)
-#             elif gcp_entities:
-#                  num_specific_actors = len([e for e in gcp_entities if (e.type_ == language_v1.types.Entity.Type.PERSON or e.type_ == language_v1.types.Entity.Type.ORGANIZATION) and e.salience > 0.015])
-
-
-#             factual_marker_count = len(numbers_in_text) + len(location_entities) + len(event_entities) + num_specific_actors
-#             if factual_marker_count < (num_words / 100.0): # e.g., less than 1 factual marker per 100 words
-#                 detected_tactics.add("high_appeal_to_emotion_with_low_factual_markers")
+    if doc:
+        specific_persons = {ent.text for ent in doc.ents if ent.label_ == "PERSON" and len(ent.text.split()) > 1}
+        specific_orgs = {ent.text for ent in doc.ents if ent.label_ == "ORG"}
+        if len(specific_persons) == 0 and len(specific_orgs) == 0:
+            detected_tactics.add("lack_of_specific_source_entities")
 
     # --- 3. Use of Loaded Language(Negative/Positive Bias) ---
     for category, words in LOADED_LANGUAGE_TERMS.items():

@@ -9,8 +9,8 @@
     "wake up", "do your own research", "red pill", "the real story", "what they're not saying", "lizard people"
   ],
   "vague_sources_terms": [
-    "experts say", "sources claim", "it is reported", "many believe", "insiders suggest",
-    "studies show", "unnamed source", "a source close to", "it is understood", "general consensus"
+    "experts say", "sources claim", "it is reported", "they say", "it is believed", "many say", "sources say", "insiders say", "insiders warn", "many believe", "insiders suggest",
+    "studies show", "unnamed source", "a source close to", "it is understood", "general consensus", "widely believed", "maybe", "likely"
   ],
   "sensational_punctuation_patterns": {
     "title_exclamations": "!!+",
@@ -18,6 +18,6 @@
     "text_exclamations_density_threshold": 0.5 
   },
   "other_charged_phrases": {
-      "urgent_phrases": ["breaking", "urgent", "now", "immediately", "must read", "alert", "critical update"]
+      "urgent_phrases": ["breaking", "urgent", "now", "immediately", "must read", "alert", "critical update", "sos"]
   }
 }

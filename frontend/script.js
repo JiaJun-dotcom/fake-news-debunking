@@ -1,7 +1,5 @@
 // script.js
 
-// TODO: Update this to your backend URL, e.g. 'http://localhost:8000'
-// If deployed, use the production URL like 'https://your-backend.example.com'
 const API_BASE_URL = 'http://localhost:8000';
 
 document.addEventListener('DOMContentLoaded', () => {

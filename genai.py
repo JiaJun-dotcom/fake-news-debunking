@@ -92,55 +92,96 @@ def generate_final_explanation(analysis_data):
     if not LLAMA_CPP_MODEL:
         error_msg = "Llama.cpp (GGUF) model not initialized. Cannot generate explanation."
         print(f"ERROR: {error_msg}")
-        return f"Error: {error_msg}\nRaw Data (for debugging):\n{json.dumps(analysis_data, indent=2)}"
+        return f"Error: {error_msg}\nRaw Data:\n{json.dumps(analysis_data, indent=2)}"
 
-    system_message = "You are a helpful news analysis assistant..." # Your full system message
+    # Diagnostic logging
+    print("DEBUG: Enter generate_final_explanation with data types:")
+    for key, val in analysis_data.items():
+        print(f"  - {key}: type={type(val)}, sample={repr(val)[:100]}")
+
+    # Defensive wrapping
+    for key in [
+        "classification",
+        "overall_article_sentiment",
+        "detected_disinformation_tactics",
+        "similar_articles_summary",
+        "fact_check_api_results"
+    ]:
+        val = analysis_data.get(key)
+        if not isinstance(val, dict):
+            print(f"DEBUG: Wrapping key '{key}' of type {type(val)} into dict")
+            analysis_data[key] = {"value": val}
+
+    system_message = "You are a helpful news analysis assistant..."
     user_prompt_content = "Please analyze the following assessment data for the provided news content:\n\n"
     user_prompt_content += "--- ARTICLE ASSESSMENT DATA ---\n"
     user_prompt_content += f"News Title: {analysis_data.get('processed_title', 'N/A')}\n"
     user_prompt_content += f"Source (if URL provided): {analysis_data.get('source_url', 'N/A')}\n\n"
 
     # 1. Classifier Prediction
-    if analysis_data.get('classification'):
-        cls_res = analysis_data['classification']
-        if cls_res and not cls_res.get("error"):
-            user_prompt_content += f"1. Classifier Prediction: **{cls_res.get('prediction', 'N/A').upper()}** (Confidence: {cls_res.get('confidence', 0):.0%})\n"
+    cls_res = analysis_data["classification"]
+    try:
+        if cls_res.get("error"):
+            user_prompt_content += f"1. Classifier Prediction: Error - {cls_res.get('error')}\n"
+        elif "prediction" in cls_res:
+            pred = cls_res.get('prediction', 'N/A')
+            conf = cls_res.get('confidence', 0)
+            user_prompt_content += f"1. Classifier Prediction: **{str(pred).upper()}** (Confidence: {conf:.0%})\n"
+        elif "value" in cls_res:
+            user_prompt_content += f"1. Classifier Prediction (raw output): {cls_res.get('value')}\n"
         else:
-            user_prompt_content += f"1. Classifier Prediction: Error - {cls_res.get('error', 'Not Available')}\n"
-    else:
-        user_prompt_content += "1. Classifier Prediction: Not Run.\n"
+            user_prompt_content += "1. Classifier Prediction: Unexpected format.\n"
+    except Exception as e:
+        print("ERROR processing classification in generate_final_explanation:", e, cls_res)
+        user_prompt_content += "1. Classifier Prediction: Error while formatting result.\n"
 
     # 2. Overall Sentiment
-    if analysis_data.get('overall_article_sentiment'):
-        sent_data = analysis_data['overall_article_sentiment']
-        sentiment_value_desc = "neutral"
-        if sent_data and not sent_data.get("error"):
+    sent_data = analysis_data["overall_article_sentiment"]
+    try:
+        if sent_data.get("error"):
+            user_prompt_content += f"2. Overall Sentiment: Error - {sent_data.get('error')}\n"
+        elif "compound" in sent_data:
             source = sent_data.get('source', 'Unknown')
+            # e.g. if VADER:
             if source.lower() == 'vader':
                 compound = sent_data.get('compound', 0)
-                if compound >= 0.05: sentiment_value_desc = f"Positive (VADER score: {compound:.2f})"
-                elif compound <= -0.05: sentiment_value_desc = f"Negative (VADER score: {compound:.2f})"
-            user_prompt_content += f"2. Overall Sentiment: {sentiment_value_desc}\n"
+                if compound >= 0.05:
+                    desc = f"Positive (VADER score: {compound:.2f})"
+                elif compound <= -0.05:
+                    desc = f"Negative (VADER score: {compound:.2f})"
+                else:
+                    desc = "Neutral"
+                user_prompt_content += f"2. Overall Sentiment: {desc}\n"
+            else:
+                # Other sentiment sources?
+                user_prompt_content += f"2. Overall Sentiment: Source={source}, data={sent_data}\n"
+        elif "value" in sent_data:
+            user_prompt_content += f"2. Overall Sentiment (raw output): {sent_data.get('value')}\n"
         else:
-            user_prompt_content += f"2. Overall Sentiment: Error - {sent_data.get('error', 'Not Available')}\n"
-    else:
-        user_prompt_content += "2. Overall Sentiment: Not Run.\n"
+            user_prompt_content += "2. Overall Sentiment: Unexpected format.\n"
+    except Exception as e:
+        print("ERROR processing sentiment in generate_final_explanation:", e, sent_data)
+        user_prompt_content += "2. Overall Sentiment: Error while formatting result.\n"
 
     # 3. Detected Disinformation Tactics
-    if analysis_data.get('detected_disinformation_tactics'):
-        tactics = analysis_data['detected_disinformation_tactics']
-        if isinstance(tactics, list):
-            user_prompt_content += f"3. Detected Disinformation Tactics: {', '.join(tactics) if tactics else 'None detected by current rules'}\n"
-        elif isinstance(tactics, dict) and tactics.get("error"):
+    tactics = analysis_data["detected_disinformation_tactics"]
+    try:
+        if tactics.get("error"):
             user_prompt_content += f"3. Detected Disinformation Tactics: Error - {tactics.get('error')}\n"
+        elif "tactics" in tactics:
+            lst = tactics.get("tactics") or []
+            user_prompt_content += f"3. Detected Disinformation Tactics: {', '.join(lst) if lst else 'None detected by current rules'}\n"
+        elif "value" in tactics:
+            user_prompt_content += f"3. Detected Disinformation Tactics (raw output): {tactics.get('value')}\n"
         else:
-             user_prompt_content += "3. Detected Disinformation Tactics: Not available or unexpected format.\n"
-    else:
-        user_prompt_content += "3. Detected Disinformation Tactics: Not Run.\n"
+            user_prompt_content += "3. Detected Disinformation Tactics: Unexpected format.\n"
+    except Exception as e:
+        print("ERROR processing tactics in generate_final_explanation:", e, tactics)
+        user_prompt_content += "3. Detected Disinformation Tactics: Error while formatting result.\n"
 
-    # 4. Semantic Similarity (USING THE PREPARED SUMMARY)
-    if analysis_data.get('similar_articles_summary'):
-        sim_summary = analysis_data['similar_articles_summary']
+    # 4. Semantic Similarity Summary 
+    sim_summary = analysis_data.get("similar_articles_summary", {})
+    try:
         user_prompt_content += "4. Semantic Similarity to Our Database:\n"
         if sim_summary.get("error"):
             user_prompt_content += f"  - Error during similarity search: {sim_summary.get('error')}\n"
@@ -150,48 +191,86 @@ def generate_final_explanation(analysis_data):
             if fake_count > 0 and real_count > 0:
                 fake_scores_str = ", ".join(sim_summary.get("fake_scores", []))
                 real_scores_str = ", ".join(sim_summary.get("real_scores", []))
-                user_prompt_content += f"  - This article is semantically similar to **{fake_count} known FAKE article(s)** (scores: [{fake_scores_str}]) and **{real_count} known REAL article(s)** (scores: [{real_scores_str}]) in our database.\n"
+                user_prompt_content += f"  - Similar to {fake_count} known FAKE (scores: [{fake_scores_str}]) and {real_count} known REAL (scores: [{real_scores_str}]).\n"
             elif fake_count > 0:
                 fake_scores_str = ", ".join(sim_summary.get("fake_scores", []))
-                user_prompt_content += f"  - This article is semantically similar to **{fake_count} known FAKE article(s)** in our database (scores: [{fake_scores_str}]).\n"
+                user_prompt_content += f"  - Similar to {fake_count} known FAKE (scores: [{fake_scores_str}]).\n"
             elif real_count > 0:
                 real_scores_str = ", ".join(sim_summary.get("real_scores", []))
-                user_prompt_content += f"  - This article is semantically similar to **{real_count} known REAL article(s)** in our database (scores: [{real_scores_str}]).\n"
+                user_prompt_content += f"  - Similar to {real_count} known REAL (scores: [{real_scores_str}]).\n"
             else:
                 if sim_summary.get("raw_count", 0) > 0:
-                     user_prompt_content += "  - Some similar articles were found, but their fake/real status was not definitively matched to known labels in the top results, or no strong similarities were found to labeled articles.\n"
+                    user_prompt_content += "  - Similar articles found but no definitive fake/real labels matched.\n"
                 else:
-                     user_prompt_content += "  - No highly similar articles were found in our database.\n"
-    else:
-        user_prompt_content += "4. Semantic Similarity to Our Database: Analysis not available or no results.\n"
+                    user_prompt_content += "  - No similar articles found.\n"
+    except Exception as e:
+        print("ERROR processing semantic similarity in generate_final_explanation:", e, sim_summary)
+        user_prompt_content += "4. Semantic Similarity: Error while formatting result.\n"
 
-    # 5. Fact Check API Results
-    if analysis_data.get('fact_check_api_results'):
-        fc_res = analysis_data['fact_check_api_results']
-        user_prompt_content += "5. Google Fact Check API Results (for automatically extracted claims):\n"
-        fc_empty = True
-        if fc_res and isinstance(fc_res, dict):
-            for claim, results_for_claim in fc_res.items():
-                if results_for_claim and not (isinstance(results_for_claim, list) and results_for_claim[0].get("error")):
-                    fc_empty = False
-                    user_prompt_content += f"  For claim: \"{claim[:80]}...\"\n"
-                    for res_item in results_for_claim[:1]:
-                        user_prompt_content += f"    - By {res_item.get('publisher', 'N/A')}: Rating: '{res_item.get('rating', 'N/A')}'\n"
-                elif results_for_claim and isinstance(results_for_claim, list) and results_for_claim[0].get("error"):
-                    user_prompt_content += f"  For claim: \"{claim[:80]}...\" - Error during fact-check: {results_for_claim[0].get('error')}\n"
-                    fc_empty = False
-        elif isinstance(fc_res, dict) and fc_res.get("error"):
-             user_prompt_content += f"  Error during fact-checking process: {fc_res.get('error')}\n"
-             fc_empty = False
-        if fc_empty:
-            user_prompt_content += "  - No relevant fact-checks found by the API for the extracted claims, or claims were not suitable/extracted.\n"
-    else:
-        user_prompt_content += "5. Google Fact Check API Results: Not Run or No Claims.\n"
+    # 5. Fact Check Results
+    fc_res = analysis_data["fact_check_api_results"]
+    try:
+        user_prompt_content += "5. Fact Check API Results:\n"
+        if fc_res.get("error"):
+            user_prompt_content += " - No relevant fact checks available due to an error or unavailable service.\n"
+        # 5.2: Structured results present
+        elif "results" in fc_res and isinstance(fc_res["results"], dict):
+            results_dict = fc_res["results"]
+            if not results_dict:
+                # Empty dict => no claims or no checks
+                user_prompt_content += "  - No relevant fact checks found for the extracted claims.\n"
+            else:
+                any_valid = False
+                # Iterate each claim
+                for claim, results_for_claim in results_dict.items():
+                    # If not a list or empty list => treat as “no checks” for this claim
+                    if not isinstance(results_for_claim, list) or not results_for_claim:
+                        user_prompt_content += (
+                            f"  For claim: \"{claim[:80]}...\" - No relevant fact checks found.\n"
+                        )
+                        continue
+                    # Filter out error entries
+                    valid_items = [
+                        item for item in results_for_claim
+                        if isinstance(item, dict) and not item.get("error")
+                    ]
+                    if not valid_items:
+                        # All entries reported errors
+                        user_prompt_content += (
+                            f"  For claim: \"{claim[:80]}...\" - No relevant fact checks found.\n"
+                        )
+                    else:
+                        any_valid = True
+                        user_prompt_content += f"  For claim: \"{claim[:80]}...\"\n"
+                    # Summarize only the first valid result
+                        first = valid_items[0]
+                        publisher = first.get("publisher", "N/A")
+                        rating = first.get("rating", "N/A")
+                        user_prompt_content += (
+                            f"    - By {publisher}: Rating: '{rating}'\n"
+                        )
+                if not any_valid:
+                    # None of the claims had valid checks
+                    user_prompt_content += "  - No relevant fact checks found for any extracted claim.\n"
+        # 5.3: Raw fallback
+        elif "value" in fc_res:
+            user_prompt_content += f"  - Fact Check raw output: {fc_res.get('value')}\n"
+            # 5.4: No recognized keys => no data
+        else:
+            user_prompt_content += "  - No fact check data available for this article.\n"
+    except Exception as e:
+        print("ERROR processing fact-check in generate_final_explanation:", e, fc_res)
+        user_prompt_content += "5. Fact Check: Error while formatting result.\n"
 
+    user_prompt_content += (
+        "Note: If no relevant fact checks were found or the service was unavailable, please explicitly state: "
+        "'No relevant or available fact checks yet for this article; please verify independently if needed.'\n\n"
+    )
     user_prompt_content += "\n--- END OF ASSESSMENT DATA ---\n\n"
     user_prompt_content += "Task: Based ONLY on the provided assessment data above, generate a concise summary for a general user..."
     user_prompt_content += "\n\nUser-Facing Explanation:"
 
+    # Now call Llama.cpp
     try:
         response = LLAMA_CPP_MODEL.create_chat_completion(
             messages=[
@@ -201,8 +280,6 @@ def generate_final_explanation(analysis_data):
             max_tokens=2048, temperature=0.25, top_p=0.9,
         )
         explanation = response["choices"][0]["message"]["content"].strip()
-        
-        # --- Parsing Logic for output returned ---
         think_delimiter = "</think>"
         final_explanation_text = explanation
         if think_delimiter in explanation:
@@ -215,13 +292,12 @@ def generate_final_explanation(analysis_data):
         
         if final_explanation_text.startswith("User-Facing Explanation:"):
             final_explanation_text = final_explanation_text[len("User-Facing Explanation:"):].lstrip()
-
+        
         return final_explanation_text
-        # --- End of new parsing logic ---
-
     except Exception as e:
         print(f"Error calling Llama.cpp Model create_chat_completion: {e}")
         return f"Error generating final explanation using Llama.cpp. (Details: {e})"
+
 
 
 # --- Main Orchestration Function ---
@@ -281,31 +357,93 @@ async def analyze_article(user_input_url_or_text):
         return_exceptions=True
     )
 
-    classification_result = results[0] if not isinstance(results[0], Exception) else {"error": f"Classifier: {str(results[0])}"}
-    similar_articles_raw_output = results[1]
-    detected_tactics = results[2] if not isinstance(results[2], Exception) else {"error": f"TacticDetect: {str(results[2])}"}
-    overall_sentiment_result = results[3] if not isinstance(results[3], Exception) else {"error": f"Sentiment: {str(results[3])}"}
-    fact_check_results = results[4] if not isinstance(results[4], Exception) else {"error": f"FactCheck: {str(results[4])}"}
+    # 1. Classification normalization
+    raw_classify = results[0]
+    if isinstance(raw_classify, Exception):
+        classification_result = {"error": f"Classifier exception: {raw_classify}"}
+    elif isinstance(raw_classify, dict):
+        classification_result = raw_classify
+    else:
+        # wrap other types (string, list, etc.) into a dict
+        classification_result = {"value": raw_classify}
+
+    # 2. Similar articles normalization
+    raw_similar = results[1]
+    if isinstance(raw_similar, Exception):
+        similar_articles_raw_output = {"error": f"Vector search exception: {raw_similar}"}
+    elif isinstance(raw_similar, dict):
+        similar_articles_raw_output = raw_similar
+    elif isinstance(raw_similar, list):
+        similar_articles_raw_output = {"results": raw_similar}
+    else:
+        similar_articles_raw_output = {"value": raw_similar}
+
+    # 3. Tactic detection normalization
+    raw_tactics = results[2]
+    if isinstance(raw_tactics, Exception):
+        detected_tactics = {"error": f"TacticDetect exception: {raw_tactics}"}
+    elif isinstance(raw_tactics, dict):
+        detected_tactics = raw_tactics
+    elif isinstance(raw_tactics, list):
+        detected_tactics = {"tactics": raw_tactics}
+    else:
+        detected_tactics = {"value": raw_tactics}
+
+    # 4. Sentiment normalization
+    raw_sentiment = results[3]
+    if isinstance(raw_sentiment, Exception):
+        overall_sentiment_result = {"error": f"Sentiment exception: {raw_sentiment}"}
+    elif isinstance(raw_sentiment, dict):
+        overall_sentiment_result = raw_sentiment
+    else:
+        overall_sentiment_result = {"value": raw_sentiment}
+
+    # 5. Fact check normalization
+    raw_fact = results[4]
+    if isinstance(raw_fact, Exception):
+        fact_check_results = {"error": f"FactCheck exception: {raw_fact}"}
+    elif isinstance(raw_fact, dict):
+        fact_check_results = raw_fact
+    elif isinstance(raw_fact, list):
+        fact_check_results = {"results": raw_fact}
+    else:
+        fact_check_results = {"value": raw_fact}
+
 
     processed_similar_articles_summary = {
         "count_fake": 0, "fake_scores": [],
         "count_real": 0, "real_scores": [],
         "raw_count": 0 # To know if vector search returned anything at all
     }
-    if isinstance(similar_articles_raw_output, list):
-        processed_similar_articles_summary["raw_count"] = len(similar_articles_raw_output)
-        for doc in similar_articles_raw_output:
+    
+# Determine actual list of similar articles, if any
+    sim_list = None
+    if isinstance(similar_articles_raw_output, dict):
+        if "error" in similar_articles_raw_output:
+            processed_similar_articles_summary["error"] = similar_articles_raw_output["error"]
+        elif "results" in similar_articles_raw_output and isinstance(similar_articles_raw_output["results"], list):
+            sim_list = similar_articles_raw_output["results"]
+        elif "value" in similar_articles_raw_output and isinstance(similar_articles_raw_output["value"], list):
+            sim_list = similar_articles_raw_output["value"]
+    # else: maybe no list to process
+    elif isinstance(similar_articles_raw_output, list):
+        # In case you skip normalization, but since you're normalizing, this is unlikely
+        sim_list = similar_articles_raw_output
+
+    if sim_list is not None:
+        processed_similar_articles_summary["raw_count"] = len(sim_list)
+        for doc in sim_list:
+            if not isinstance(doc, dict):
+                continue
             label = doc.get("label")
             score = doc.get("similarity_score", 0.0)
-            if label == 0: 
+            if label == 0:
                 processed_similar_articles_summary["count_fake"] += 1
                 processed_similar_articles_summary["fake_scores"].append(f"{score:.3f}")
-            elif label == 1: 
+            elif label == 1:
                 processed_similar_articles_summary["count_real"] += 1
                 processed_similar_articles_summary["real_scores"].append(f"{score:.3f}")
-    elif isinstance(similar_articles_raw_output, dict) and "error" in similar_articles_raw_output:
-        processed_similar_articles_summary["error"] = similar_articles_raw_output["error"]
-
+    
     analysis_data_for_genai = {
         "user_input_source": user_input_url_or_text,
         "processed_title": article_title,

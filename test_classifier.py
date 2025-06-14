@@ -1,19 +1,16 @@
 import os
-import json
-import requests
-from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from pymongo import MongoClient
-from transformers import BertTokenizer, BertForSequenceClassification
+from transformers import AutoTokenizer, BertForSequenceClassification
 import torch
 from torch.nn.functional import softmax
-from vertexai.language_models import TextEmbeddingModel
-import vertexai
 
 load_dotenv()
 
 # --- Configuration ---
-FINE_TUNED_MODEL_PATH = "./fine_tuned"
+FINE_TUNED_MODEL_PATH = "./fine_tuned_bertmini"
+
+CLASSIFIER_MODEL = None
+CLASSIFIER_TOKENIZER = None
 
 def initialize_classifier_resources():
     global CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER
@@ -21,8 +18,8 @@ def initialize_classifier_resources():
     try:
         if not os.path.exists(FINE_TUNED_MODEL_PATH):
             print(f"ERROR: Fine-tuned model not found at {FINE_TUNED_MODEL_PATH}. Please train and save it first.")
-        CLASSIFIER_MODEL = BertForSequenceClassification.from_pretrained(FINE_TUNED_MODEL_PATH)
-        CLASSIFIER_TOKENIZER = BertTokenizer.from_pretrained(FINE_TUNED_MODEL_PATH)
+        CLASSIFIER_MODEL = BertForSequenceClassification.from_pretrained(FINE_TUNED_MODEL_PATH, use_safetensors=True)
+        CLASSIFIER_TOKENIZER = AutoTokenizer.from_pretrained(FINE_TUNED_MODEL_PATH)
         CLASSIFIER_MODEL.eval() # Set to evaluation mode
         print("Fine-tuned BERT classifier loaded successfully.")
     except Exception as e:

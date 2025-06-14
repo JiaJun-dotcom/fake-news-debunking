@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool # To run blocking IO/CPU tasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import os
 import time
 from pydantic import BaseModel
@@ -58,17 +59,15 @@ async def log_requests(request: Request, call_next):
     print(f"INFO: Request: {request.method} {request.url.path} - Status: {response.status_code} - Time: {process_time:.4f}s")
     return response
 
-@app.get("/", tags=["General"])
-async def read_root():
+@app.get("/", tags=["Frontend"])
+async def serve_frontend():
     """
     A simple GET endpoint at the root URL.
     Can be used as a basic health check or to provide API information.
     """
     if RESOURCES_INITIALIZED_SUCCESSFULLY:
-        return {"message": "Welcome to the Fake News Debunker API. Resources are initialized."}
-    else:
-        return {"message": "Welcome to the Fake News Debunker API. WARNING: Resources failed to initialize properly."}
-
+        return FileResponse("frontend/index.html")
+    
 # --- Analysis Endpoint ---
 @app.post("/analyze_article/", tags=["Analysis"])
 async def analyze_article_endpoint(item: ArticleInput):
@@ -105,7 +104,7 @@ async def analyze_article_endpoint(item: ArticleInput):
         print(f"UNEXPECTED ERROR in analyze_article_endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred.")
         
-app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+app.mount("/static", StaticFiles(directory="frontend", html=True), name="static")
 
 # --- How to Run This Server ---
 # Run from terminal in the directory containing 'main.py':
@@ -122,9 +121,3 @@ app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
 #      -d '{"content": "This is a sample news article text. Scientists today announced a shocking discovery that cats can indeed fly, but only on Tuesdays. This has been confirmed by multiple unnamed sources and experts agree it is a game changer."}'
 # or if want to POST url:
 # Replace with: -d '{"content": "https://www.reuters.com/world/europe/shelling-hits-east-ukrainian-city-hours-after-ceasefire-deal-2023-01-06/"}'
-
-# For Video demo, use FastAPI's Automatic Docs (Swagger UI / ReDoc):
-# How: Just open http://localhost:8000/docs in your web browser.
-# curl -X POST "http://localhost:8000/analyze_article/" \
-#       -H "Content-Type: application/json" \
-#       -d '{"content": "This is a sample news article text. Scientists today announced a shocking discovery that cats can indeed fly, but only on Tuesdays. This has been confirmed by multiple unnamed sources and experts agree it is a game changer."}'
