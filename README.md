@@ -1,3 +1,4 @@
+![Deconstructing Fake News](wallpaper.png)
 🏛️ 🚀 Deconstructing Fake News Narratives to Enhance Media Literacy 🚀 🏛️
 =====================================================================
 
