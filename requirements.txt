@@ -1,27 +1,45 @@
+# Core data science stack
 pandas
-numpy
-pymongo
-google-cloud-language
-google-cloud-aiplatform
-tqdm
+numpy==1.24.4 
 scikit-learn
+tqdm
+
+# NLP libraries
 nltk
-collection
-google-api-python-client
-transformers
-llama-cpp-python
-torch
-tensorflow
-sentencepiece
 vaderSentiment
-beautifulsoup4==4.6.3
-requests
-fastapi
-pydantic
-extraction
-selenium 
-webdriver-manager
-uvicorn
+transformers
 sentence-transformers
+sentencepiece
+
+# spaCy and model
 spacy>=3.5.0,<3.6.0
 en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.5.0/en_core_web_sm-3.5.0.tar.gz
+thinc==8.1.10  
+
+# ML frameworks
+torch
+tensorflow
+
+# Google Cloud
+google-cloud-language
+google-cloud-aiplatform
+google-api-python-client
+
+# Web scraping
+beautifulsoup4==4.6.3
+requests
+selenium
+webdriver-manager
+extraction
+collections
+
+# FastAPI backend
+fastapi
+pydantic
+uvicorn
+
+# MongoDB
+pymongo
+
+# Others
+llama-cpp-python 
