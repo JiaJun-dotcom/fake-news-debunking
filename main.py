@@ -1,18 +1,50 @@
 # FastAPI endpoint to deploy model
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.concurrency import run_in_threadpool # To run blocking IO/CPU tasks
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from contextlib import asynccontextmanager
 import os
 import time
 from pydantic import BaseModel
 import genai
 
+ml_resources = {}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    This function runs once when the FastAPI application starts.
+    It loads all necessary resources like ML models.
+    """
+    print("INFO:     FastAPI application starting up...")
+    print("INFO:     Initializing all analysis resources (models, clients, lexicons)...")
+    
+    try:
+        # This function loads all ML models, DB connections, API clients, etc.
+        if genai.initialize_all_module_resources():
+            ml_resources["is_ready"] = True
+            print("INFO:     All analysis resources initialized successfully. API is ready.")
+        else:
+            raise RuntimeError("CRITICAL: Failed to initialize one or more analysis resources.")
+    except Exception as e:
+        print(f"CRITICAL: An unexpected error occurred during startup: {e}")
+        raise
+
+    yield 
+
+    # This code runs on shutdown.
+    print("INFO:     FastAPI application shutting down...")
+    ml_resources.clear()
+    print("INFO:     Cleared all analysis resources.")
+
+
 app = FastAPI(
-title="Fake News Debunker API",
+    title="Fake News Debunker API",
     description="Analyzes news articles or text input for potential misinformation, tactics, and provides an AI-generated explanation.",
-    version="1.0"
+    version="1.0",
+    lifespan=lifespan 
 )
 
 app.add_middleware(
@@ -24,49 +56,26 @@ app.add_middleware(
 )
 
 class ArticleInput(BaseModel):
-    content: str # Can be URL or text 
-    
-RESOURCES_INITIALIZED_SUCCESSFULLY = False
+    content: str
 
-@app.on_event("startup")
-async def startup_event():
-    """
-    This function is executed once when the FastAPI application starts.
-    Loads models, initializes database connections,
-    and sets up any other resources needed by application.
-    """
-    global RESOURCES_INITIALIZED_SUCCESSFULLY
-    print("FastAPI application starting up...")
-    print("Initializing all analysis resources (models, clients, lexicons)...")
-    # This function should load all ML models, DB connections, API clients, etc.
-    if genai.initialize_all_module_resources():
-        RESOURCES_INITIALIZED_SUCCESSFULLY = True
-        print("All analysis resources initialized successfully. API is ready.")
-    else:
-        RESOURCES_INITIALIZED_SUCCESSFULLY = False
-        print("CRITICAL ERROR: Failed to initialize one or more analysis resources during startup.")
-        
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """
-    This middleware intercepts every HTTP request.
-    It logs basic information about the request and its processing time.
-    """
     start_time = time.time()
-    response = await call_next(request) # Process the request
+    response = await call_next(request)
     process_time = time.time() - start_time
-    # Log request details (can be expanded)
     print(f"INFO: Request: {request.method} {request.url.path} - Status: {response.status_code} - Time: {process_time:.4f}s")
     return response
 
 @app.get("/", tags=["Frontend"])
 async def serve_frontend():
     """
-    A simple GET endpoint at the root URL.
-    Can be used as a basic health check or to provide API information.
+    Serves the main frontend page.
+    Returns a 503 error if the service is still starting up.
     """
-    if RESOURCES_INITIALIZED_SUCCESSFULLY:
+    if ml_resources.get("is_ready"):
         return FileResponse("frontend/index.html")
+    else:
+        raise HTTPException(status_code=503, detail="Service is currently starting up, please try again in a moment.")
     
 # --- Analysis Endpoint ---
 @app.post("/analyze_article/", tags=["Analysis"])
@@ -76,11 +85,9 @@ async def analyze_article_endpoint(item: ArticleInput):
     Accepts a JSON body with a "content" field (URL or text).
     Returns a comprehensive analysis including a GenAI-generated explanation.
     """
-    # Check if resources were initialized successfully during startup.
-    if not RESOURCES_INITIALIZED_SUCCESSFULLY:
+    if not ml_resources.get("is_ready"):
         raise HTTPException(status_code=503, detail="Service temporarily unavailable: Critical resources not initialized.")
 
-    # Validate input content from the Pydantic model.
     if not item.content or not item.content.strip():
         raise HTTPException(status_code=400, detail="Input 'content' cannot be empty.")
 
