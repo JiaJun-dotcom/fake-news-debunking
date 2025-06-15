@@ -31,7 +31,6 @@ requests
 selenium
 webdriver-manager
 extraction
-collections
 
 # FastAPI backend
 fastapi
