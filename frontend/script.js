@@ -1,7 +1,5 @@
 // script.js
 
-const API_BASE_URL = 'http://localhost:8000';
-
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('analyze-form');
     const contentInput = document.getElementById('content-input');
@@ -19,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultOutput.textContent = 'Analyzing...';
 
         try {
-            const response = await fetch(`${API_BASE_URL}/analyze_article/`, {
+            const response = await fetch(`/analyze_article/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
