@@ -53,11 +53,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Fake News Debunker API",
-    # ... (rest of your FastAPI setup is fine)
     version="1.0",
     lifespan=lifespan
 )
-# ... (all your middleware, etc. is fine)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -80,6 +79,14 @@ async def log_requests(request: Request, call_next):
 @app.get("/", tags=["Frontend"])
 async def serve_frontend():
     return FileResponse("frontend/index.html")
+
+# Health checker for Render Deployment
+@app.get("/health", status_code=200, tags=["System"])
+async def health_check():
+    """
+    Simple endpoint for the hosting platform's health checker.
+    """
+    return {"status": "ok"}
     
 # --- Analysis Endpoint ---
 @app.post("/analyze_article/", tags=["Analysis"])
@@ -99,7 +106,6 @@ async def analyze_article_endpoint(item: ArticleInput):
     print(f"Received analysis request for content (first 100 chars): {item.content[:100]}...")
 
     try:
-        # <--- CHANGE: Access the wrapper function via the dictionary
         genai_module = ml_resources["genai_module"]
         result_string = await run_in_threadpool(genai_module.analyze_article_wrapper, item.content)
         
@@ -121,18 +127,4 @@ async def analyze_article_endpoint(item: ArticleInput):
         
 app.mount("/static", StaticFiles(directory="frontend", html=True), name="static")
 
-# --- How to Run This Server ---
-# Run from terminal in the directory containing 'main.py':
 #    uvicorn main:app --reload --port 8000
-#    - 'main': the name of your Python file (main.py).
-#    - 'app': the FastAPI instance variable you created (app = FastAPI()).
-#    - '--reload': enables auto-reloading when you save changes to the code (for development).
-
-# Access the API:
-#    - Send POST requests to: http://127.0.0.1:8000/analyze_article/
-#      eg:
-#      curl -X POST "http://localhost:8000/analyze_article/" \
-#      -H "Content-Type: application/json" \
-#      -d '{"content": "This is a sample news article text. Scientists today announced a shocking discovery that cats can indeed fly, but only on Tuesdays. This has been confirmed by multiple unnamed sources and experts agree it is a game changer."}'
-# or if want to POST url:
-# Replace with: -d '{"content": "https://www.reuters.com/world/europe/shelling-hits-east-ukrainian-city-hours-after-ceasefire-deal-2023-01-06/"}'
