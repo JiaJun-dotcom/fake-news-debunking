@@ -8,9 +8,10 @@ from contextlib import asynccontextmanager
 import os
 import time
 from pydantic import BaseModel
-import genai
+import threading
 
 ml_resources = {
+    "genai_module": None, 
     "is_ready": False,
     "lock": threading.Lock()
 }
@@ -18,20 +19,20 @@ ml_resources = {
 def initialize_models_if_needed():
     """
     A thread-safe function to initialize resources only once.
-    This is the core of the lazy-loading pattern.
     """
-    # Use a non-blocking check first for performance.
     if not ml_resources["is_ready"]:
         with ml_resources["lock"]:
             if not ml_resources["is_ready"]:
-                print("INFO:     First request received. Initializing all analysis resources now...")
+                print("INFO:     First request. Lazily importing genai and initializing resources...")
                 try:
-                    if genai.initialize_all_module_resources():
+                    import genai  
+                    ml_resources["genai_module"] = genai 
+
+                    if ml_resources["genai_module"].initialize_all_module_resources():
                         ml_resources["is_ready"] = True
                         print("INFO:     All analysis resources initialized successfully. API is ready.")
                     else:
                         print("CRITICAL: Failed to initialize one or more analysis resources.")
-                        # Keep is_ready as False so future requests might try again
                 except Exception as e:
                     print(f"CRITICAL: An unexpected error occurred during resource initialization: {e}")
                     ml_resources["is_ready"] = False
@@ -40,15 +41,11 @@ def initialize_models_if_needed():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    This function now does very little at startup, ensuring the server starts quickly.
+    This function is super lightweight and ensures a fast startup.
     """
     print("INFO:     FastAPI application starting up...")
-    ml_resources["is_ready"] = False 
-    print("INFO:     Server is live. Models will be loaded on the first analysis request.")
-    
+    print("INFO:     Server is live. Genai module and models will be loaded on the first analysis request.")
     yield 
-
-    # This code runs on shutdown.
     print("INFO:     FastAPI application shutting down...")
     ml_resources.clear()
     print("INFO:     Cleared all analysis resources.")
@@ -56,11 +53,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Fake News Debunker API",
-    description="Analyzes news articles or text input for potential misinformation, tactics, and provides an AI-generated explanation.",
+    # ... (rest of your FastAPI setup is fine)
     version="1.0",
-    lifespan=lifespan 
+    lifespan=lifespan
 )
-
+# ... (all your middleware, etc. is fine)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -82,9 +79,6 @@ async def log_requests(request: Request, call_next):
 
 @app.get("/", tags=["Frontend"])
 async def serve_frontend():
-    """
-    Serves the main frontend page. This will now always work instantly.
-    """
     return FileResponse("frontend/index.html")
     
 # --- Analysis Endpoint ---
@@ -92,29 +86,26 @@ async def serve_frontend():
 async def analyze_article_endpoint(item: ArticleInput):
     """
     Endpoint to analyze a news article.
-    It will trigger model loading on the first call.
+    It will trigger module import and model loading on the first call.
     """
     try:
-        # This function will block and load models only if they haven't been loaded yet.
-        # It's run in a threadpool to avoid blocking the main FastAPI event loop.
         await run_in_threadpool(initialize_models_if_needed)
     except Exception as e:
-        # If initialization failed, return a 503 error.
         raise HTTPException(status_code=503, detail=f"Service temporarily unavailable: Could not initialize critical resources. Error: {e}")
 
-    # After the check, we know the models are ready (or an exception was raised).
     if not item.content or not item.content.strip():
         raise HTTPException(status_code=400, detail="Input 'content' cannot be empty.")
 
     print(f"Received analysis request for content (first 100 chars): {item.content[:100]}...")
 
     try:
-        result_string = await run_in_threadpool(genai.analyze_article_wrapper, item.content)
+        # <--- CHANGE: Access the wrapper function via the dictionary
+        genai_module = ml_resources["genai_module"]
+        result_string = await run_in_threadpool(genai_module.analyze_article_wrapper, item.content)
         
         if isinstance(result_string, str) and result_string.startswith("Error:"):
             print(f"Analysis wrapper returned an error: {result_string}")
-            error_detail = result_string 
-            raise HTTPException(status_code=500, detail=error_detail)
+            raise HTTPException(status_code=500, detail=result_string)
         
         if isinstance(result_string, str):
             return result_string 
@@ -124,7 +115,6 @@ async def analyze_article_endpoint(item: ArticleInput):
 
     except Exception as e:
         print(f"UNEXPECTED ERROR in analyze_article_endpoint: {e}")
-        # Check if the exception is one we've already handled
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred.")
