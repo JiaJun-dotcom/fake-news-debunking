@@ -18,7 +18,7 @@ thinc==8.1.10
 
 # ML frameworks
 torch
-tensorflow-cpu
+tensorflow
 
 # Google Cloud
 google-cloud-language

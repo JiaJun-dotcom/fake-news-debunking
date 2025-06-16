@@ -10,28 +10,42 @@ import time
 from pydantic import BaseModel
 import genai
 
-ml_resources = {}
+ml_resources = {
+    "is_ready": False,
+    "lock": threading.Lock()
+}
+
+def initialize_models_if_needed():
+    """
+    A thread-safe function to initialize resources only once.
+    This is the core of the lazy-loading pattern.
+    """
+    # Use a non-blocking check first for performance.
+    if not ml_resources["is_ready"]:
+        with ml_resources["lock"]:
+            if not ml_resources["is_ready"]:
+                print("INFO:     First request received. Initializing all analysis resources now...")
+                try:
+                    if genai.initialize_all_module_resources():
+                        ml_resources["is_ready"] = True
+                        print("INFO:     All analysis resources initialized successfully. API is ready.")
+                    else:
+                        print("CRITICAL: Failed to initialize one or more analysis resources.")
+                        # Keep is_ready as False so future requests might try again
+                except Exception as e:
+                    print(f"CRITICAL: An unexpected error occurred during resource initialization: {e}")
+                    ml_resources["is_ready"] = False
+                    raise
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    This function runs once when the FastAPI application starts.
-    It loads all necessary resources like ML models.
+    This function now does very little at startup, ensuring the server starts quickly.
     """
     print("INFO:     FastAPI application starting up...")
-    print("INFO:     Initializing all analysis resources (models, clients, lexicons)...")
+    ml_resources["is_ready"] = False 
+    print("INFO:     Server is live. Models will be loaded on the first analysis request.")
     
-    try:
-        # This function loads all ML models, DB connections, API clients, etc.
-        if genai.initialize_all_module_resources():
-            ml_resources["is_ready"] = True
-            print("INFO:     All analysis resources initialized successfully. API is ready.")
-        else:
-            raise RuntimeError("CRITICAL: Failed to initialize one or more analysis resources.")
-    except Exception as e:
-        print(f"CRITICAL: An unexpected error occurred during startup: {e}")
-        raise
-
     yield 
 
     # This code runs on shutdown.
@@ -69,25 +83,26 @@ async def log_requests(request: Request, call_next):
 @app.get("/", tags=["Frontend"])
 async def serve_frontend():
     """
-    Serves the main frontend page.
-    Returns a 503 error if the service is still starting up.
+    Serves the main frontend page. This will now always work instantly.
     """
-    if ml_resources.get("is_ready"):
-        return FileResponse("frontend/index.html")
-    else:
-        raise HTTPException(status_code=503, detail="Service is currently starting up, please try again in a moment.")
+    return FileResponse("frontend/index.html")
     
 # --- Analysis Endpoint ---
 @app.post("/analyze_article/", tags=["Analysis"])
 async def analyze_article_endpoint(item: ArticleInput):
     """
     Endpoint to analyze a news article.
-    Accepts a JSON body with a "content" field (URL or text).
-    Returns a comprehensive analysis including a GenAI-generated explanation.
+    It will trigger model loading on the first call.
     """
-    if not ml_resources.get("is_ready"):
-        raise HTTPException(status_code=503, detail="Service temporarily unavailable: Critical resources not initialized.")
+    try:
+        # This function will block and load models only if they haven't been loaded yet.
+        # It's run in a threadpool to avoid blocking the main FastAPI event loop.
+        await run_in_threadpool(initialize_models_if_needed)
+    except Exception as e:
+        # If initialization failed, return a 503 error.
+        raise HTTPException(status_code=503, detail=f"Service temporarily unavailable: Could not initialize critical resources. Error: {e}")
 
+    # After the check, we know the models are ready (or an exception was raised).
     if not item.content or not item.content.strip():
         raise HTTPException(status_code=400, detail="Input 'content' cannot be empty.")
 
@@ -109,6 +124,9 @@ async def analyze_article_endpoint(item: ArticleInput):
 
     except Exception as e:
         print(f"UNEXPECTED ERROR in analyze_article_endpoint: {e}")
+        # Check if the exception is one we've already handled
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred.")
         
 app.mount("/static", StaticFiles(directory="frontend", html=True), name="static")
