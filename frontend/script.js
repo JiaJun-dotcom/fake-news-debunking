@@ -26,27 +26,32 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!response.ok) {
-                // Try to extract JSON error detail
-                let errText = `Status ${response.status}`;
+                // Read the response body as text ONCE.
+                const errorText = await response.text();
+                let detail = errorText;
+
                 try {
-                    const errJson = await response.json();
-                    if (errJson.detail) {
-                        errText += `: ${errJson.detail}`;
-                    } else {
-                        errText += `: ${JSON.stringify(errJson)}`;
+                    const errorJson = JSON.parse(errorText);
+                    if (errorJson.detail) {
+                        detail = errorJson.detail;
                     }
-                } catch (_parseErr) {
-                    // response not JSON
-                    errText += `: ${await response.text()}`;
+                } catch (parseError) {
                 }
-                resultOutput.textContent = `Error: ${errText}`;
-            } else {
-                const data = await response.json();
-                // Pretty-print JSON
-                resultOutput.textContent = JSON.stringify(data, null, 2);
+
+                if (response.status === 502 || response.status === 503) {
+                     resultOutput.textContent = `Server is warming up (Status ${response.status}). This is normal for the first request. Please wait 2 minutes and try again.`;
+                } else {
+                     resultOutput.textContent = `Error: ${detail}`;
+                }
+                return; 
             }
+
+            const data = await response.json();
+            
+            resultOutput.textContent = data; 
+
         } catch (error) {
-            resultOutput.textContent = `Request failed: ${error}`;
+            resultOutput.textContent = `Network Request Failed: ${error}. Please check your connection.`;
         }
     });
 });
